@@ -34,11 +34,21 @@ interface PipelineNodeConfig {
     inputs: Record<string, Input>;
 }
 
+interface NodeRequest {
+    node: PipelineNode<any, any>;
+    outputReference: string;
+    replaceInput: string;
+}
+
 abstract class PipelineNode<TConfig extends PipelineNodeConfig = PipelineNodeConfig, TOutput extends string = string> {
     constructor(public readonly config: TConfig) {}
 
     get name() { return this.config.name; }
     get inputs(): TConfig["inputs"] { return this.config.inputs; }
+
+    async analyze(context: PipelineContext): Promise<NodeRequest[]> {
+        return [];
+    }
 
     abstract run(context: PipelineContext): Promise<NodeOutput<TOutput>[]>;
 
@@ -140,9 +150,56 @@ export class Pipeline {
         }
     }
 
+    private async analyze() {
+        const context: PipelineContext = {
+            resolveInput: async (input: Input): Promise<string[]> => {
+                // Node references won't work during analysis since nodes haven't run yet
+                if (inputIsNodeOutputReference(input)) {
+                    return []; // Skip node references during analysis
+                }
+
+                // File paths and arrays work fine
+                if (typeof input === "string") {
+                    const results = await glob(input)
+                    return results.length > 0 ? results : [input]; // Return original if no matches
+                }
+
+                if (Array.isArray(input)) {
+                    const results: string[] = [];
+                    for (const item of input) {
+                        results.push(...(await context.resolveInput(item)))
+                    }
+                    return results;
+                }
+
+                return []
+            },
+            log: () => {}, // Silent during analysis
+            cache: this.cache,
+        }
+
+        const nodesToAnalyze = this.graph.overallOrder();
+
+        for (const nodeName of nodesToAnalyze) {
+            const node = this.graph.getNodeData(nodeName);
+
+            const requests = await node.analyze(context);
+
+            for (const request of requests) {
+                // Add the requested node
+                this.addNode(request.node);
+
+                // Update the original node's inputs to reference the new node's output
+                node.config.inputs[request.replaceInput] = from(request.node, request.outputReference);
+            }
+        }
+    }
+
     async run() {
         console.log(`Running pipeline ${this.name}`);
         console.log(`Number of nodes: ${this.graph.size}`);
+
+        await this.analyze();
         this.setupDependencies();
 
         const executionOrder = this.graph.overallOrder();
@@ -187,14 +244,9 @@ export class Pipeline {
             const node = this.graph.getNodeData(nodeName);
             context.log(`▶ Running node: ${node.name}`);
 
-            // const outputs: NodeOutput<any>[] = [];
             try {
-                // for await (const output of node.run(context)) {
-                //     outputs.push(output);
-                //     context.log(`  → Generated: ${JSON.stringify(output, null, 2)}`);
-                // }
                 const output = await node.run(context);
-                context.log(`  → Generated: ${JSON.stringify(output, null, 2)}`);
+                context.log(`  → Generated: ${JSON.stringify(output)}`);
 
                 this.nodeOutputs.set(node.name, output);
                 context.log(`  - Completed: ${node.name}`);
@@ -331,7 +383,8 @@ export class CompileStylesheetNode extends PipelineNode<CompileStylesheetConfig,
 interface XsltTransformConfig extends PipelineNodeConfig {
     name: string;
     inputs: {
-        sefStylesheet: Input;
+        sefStylesheet?: Input;
+        xsltStylesheet?: Input;
         sourceXml?: Input;
     };
     outputFilenameMapping?: (inputPath: string) => string;
@@ -339,6 +392,21 @@ interface XsltTransformConfig extends PipelineNodeConfig {
 }
 
 export class XsltTransformNode extends PipelineNode<XsltTransformConfig, "transformed" | "result-documents"> {
+    constructor(config: XsltTransformConfig) {
+        super(config);
+
+        // Runtime validation: exactly one stylesheet input required
+        const hasSef = !!this.inputs.sefStylesheet;
+        const hasXslt = !!this.inputs.xsltStylesheet;
+
+        if (!hasSef && !hasXslt) {
+            throw new Error(`XsltTransformNode "${this.name}" requires either sefStylesheet or xsltStylesheet input`);
+        }
+        if (hasSef && hasXslt) {
+            throw new Error(`XsltTransformNode "${this.name}" cannot have both sefStylesheet and xsltStylesheet inputs`);
+        }
+    }
+
     private defaultOutputFilenameMapping = (inputPath: string) => {
         const inputFilename = path.basename(inputPath);
         const inputDirname = path.dirname(inputPath);
@@ -346,8 +414,37 @@ export class XsltTransformNode extends PipelineNode<XsltTransformConfig, "transf
         return path.join(inputDirname, inputBasename + '.html');
     }
 
+    async analyze(context: PipelineContext): Promise<NodeRequest[]> {
+        // If user provided raw XSLT, request compilation
+        if (this.inputs.xsltStylesheet && !this.inputs.sefStylesheet) {
+            const xsltPaths = await context.resolveInput(this.inputs.xsltStylesheet);
+            if (xsltPaths.length > 0) {
+                const xsltPath = xsltPaths[0];
+                const sefPath = xsltPath.replace('.xsl', '.sef.json');
+
+                const compileNode = new CompileStylesheetNode({
+                    name: `${this.name}-auto-compile`,
+                    inputs: { xslt: this.inputs.xsltStylesheet },
+                    outputFilename: sefPath
+                });
+
+                return [{
+                    node: compileNode,
+                    outputReference: 'compiledStylesheet',
+                    replaceInput: 'sefStylesheet'
+                }];
+            }
+        }
+
+        return [];
+    }
 
     async run(context: PipelineContext) {
+        // By the time we reach run(), analyze() should have ensured sefStylesheet exists
+        if (!this.inputs.sefStylesheet) {
+            throw new Error(`XsltTransformNode "${this.name}" has neither sefStylesheet nor xsltStylesheet input`);
+        }
+
         const sefStylesheetPath = (await context.resolveInput(this.inputs.sefStylesheet))[0];
 
         // Handle no-source mode (stylesheet uses document() for input)
