@@ -11,5 +11,5 @@ export default defineConfig({
     minify: true,
     target: 'node',
     outDir: 'dist',
-    external: ['saxon-js']
+    external: ['saxonjs-he', 'xslt3-he']
 });

@@ -71,6 +71,26 @@ export abstract class PipelineNode<TConfig extends PipelineNodeConfig = Pipeline
             }
         }
 
+        // Auto-detect dependencies from explicit dependencies
+        if (this.config.explicitDependencies) {
+            for (const depNodeName of this.config.explicitDependencies) {
+                const depOutputs = context.getNodeOutputs(depNodeName);
+                if (depOutputs) {
+                    let fileIndex = 0;
+                    for (const outputObj of depOutputs) {
+                        for (const [outputKey, fileArray] of Object.entries(outputObj)) {
+                            for (const filePath of fileArray) {
+                                deps[`${depNodeName}-${outputKey}-${fileIndex++}`] = {
+                                    path: filePath,
+                                    hash: await context.cache.computeFileHash(filePath)
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         const cacheKeys = items.map(getCacheKey);
         await context.cache.cleanExcept(this.name, cacheKeys);
 
@@ -107,6 +127,10 @@ export abstract class PipelineNode<TConfig extends PipelineNodeConfig = Pipeline
             );
             await context.cache.setCache(this.name, cacheKey, cacheEntry);
 
+            if (this.config.explicitDependencies?.length) {
+                context.log(`  - Cached with ${Object.keys(deps).length} dependencies (including ${this.config.explicitDependencies.length} explicit)`);
+            }
+
             results.push({item, output: outputPath, cached: false, result});
         }
         return results;
@@ -122,6 +146,7 @@ export interface PipelineContext {
     buildDir: string;
 
     getBuildPath(nodeName: string, inputPath: string, newExtension?: string): string;
+    getNodeOutputs(nodeName: string): NodeOutput<any>[] | undefined;
 }
 
 export class Pipeline {
@@ -162,24 +187,12 @@ export class Pipeline {
         return this;
     }
 
-    private setupDependencies() {
-        // Process all nodes, not just entry nodes
+    private setupExplicitDependencies() {
+        // Setup explicit dependencies first
         for (const nodeName of this.graph.overallOrder()) {
             const node = this.graph.getNodeData(nodeName);
 
-            // Handle input-based dependencies (existing logic)
-            for (const [_, input] of Object.entries(node.inputs)) {
-                if (typeof input === 'object' && 'node' in input) {
-                    try {
-                        console.log(`Adding input dependency for node ${node.name}: ${input.node.name}`);
-                        this.graph.addDependency(node.name, input.node.name);
-                    } catch (err: any) {
-                        throw new Error(`Failed to add input dependency for node ${node.name}: ${err.message}`);
-                    }
-                }
-            }
-
-            // Handle explicit dependencies (new logic)
+            // Handle explicit dependencies only
             if (node.config.explicitDependencies) {
                 for (const depNodeName of node.config.explicitDependencies) {
                     try {
@@ -191,6 +204,25 @@ export class Pipeline {
                         this.graph.addDependency(node.name, depNodeName);
                     } catch (err: any) {
                         throw new Error(`Failed to add explicit dependency for node ${node.name}: ${err.message}`);
+                    }
+                }
+            }
+        }
+    }
+
+    private setupInputDependencies() {
+        // Setup input-based dependencies after analyze
+        for (const nodeName of this.graph.overallOrder()) {
+            const node = this.graph.getNodeData(nodeName);
+
+            // Handle input-based dependencies (from from() references)
+            for (const [_, input] of Object.entries(node.inputs)) {
+                if (typeof input === 'object' && 'node' in input) {
+                    try {
+                        console.log(`Adding input dependency for node ${node.name}: ${input.node.name}`);
+                        this.graph.addDependency(node.name, input.node.name);
+                    } catch (err: any) {
+                        throw new Error(`Failed to add input dependency for node ${node.name}: ${err.message}`);
                     }
                 }
             }
@@ -231,7 +263,8 @@ export class Pipeline {
                 return newExtension ?
                     buildPath.replace(path.extname(buildPath), newExtension) :
                     buildPath;
-            }
+            },
+            getNodeOutputs: () => undefined // No outputs during analysis phase
         }
 
         const nodesToAnalyze = this.graph.overallOrder();
@@ -245,6 +278,9 @@ export class Pipeline {
                 // Add the requested node
                 this.addNode(request.node);
 
+                // Immediately set up dependency: original node depends on auto-compile node
+                this.graph.addDependency(node.name, request.node.name);
+
                 // Update the original node's inputs to reference the new node's output
                 node.config.inputs[request.replaceInput] = from(request.node, request.outputReference);
             }
@@ -255,8 +291,14 @@ export class Pipeline {
         console.log(`Running pipeline ${this.name}`);
         console.log(`Number of nodes: ${this.graph.size()}`);
 
+        // 1. Setup explicit dependencies first
+        this.setupExplicitDependencies();
+
+        // 2. Run analyze() - auto-compile nodes created in correct order
         await this.analyze();
-        this.setupDependencies();
+
+        // 3. Setup input-based dependencies (from auto-compile and from() references)
+        this.setupInputDependencies();
 
         const executionOrder = this.graph.overallOrder();
         console.log(executionOrder)
@@ -301,7 +343,8 @@ export class Pipeline {
                 return newExtension ?
                     buildPath.replace(path.extname(buildPath), newExtension) :
                     buildPath;
-            }
+            },
+            getNodeOutputs: (nodeName: string) => this.nodeOutputs.get(nodeName)
         }
 
         for (const nodeName of executionOrder) {

@@ -4,13 +4,49 @@ import {
     type PipelineContext,
     PipelineNode,
     type PipelineNodeConfig
-} from "./core/pipeline";
-import {CompileStylesheetNode} from "./xml/nodes/compileStylesheetNode";
+} from "../../core/pipeline";
+import {CompileStylesheetNode} from "./compileStylesheetNode";
 import path from "node:path";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 
 // @ts-ignore
-import {transform} from 'saxon-js';
+import {transform, getResource, getPlatform} from 'saxonjs-he';
+
+// Register Kiln extension functions at module load
+// @ts-ignore
+import SaxonJS from 'saxonjs-he';
+
+// Register the kiln:url-for-match function implementation
+SaxonJS.registerExtensionFunctions({
+    "namespace": "http://www.kcl.ac.uk/artshums/depts/ddh/kiln/ns/1.0",
+    "signatures": {
+        "url-for-match": {
+            "as": "xs:string",
+            "param": ["xs:string", "xs:string*", "xs:integer"],
+            "arity": [3],
+            "impl": function(matchId: string, params: any, priority: number): string {
+                // Simple implementation: generate static URLs based on parameters
+                // matchId is like 'local-epidoc-display-html'
+                // params is an iterator of [language, filename]
+                const paramArray = Array.from(params);
+                console.log(paramArray)
+                console.log(`url-for-match(${matchId}, ${paramArray}, ${priority})`);
+                const language = paramArray[0] || 'en';
+                const filename = paramArray[1] || 'unknown';
+
+                if (matchId === 'local-epidoc-display-html') {
+                    const result = `/${language}/inscriptions/${filename}.html`;
+                    console.log(`RETURNING ABSOLUTE: ${result}`);
+                    return result;
+                }
+
+                // Fallback for other match IDs
+                return `/${language}/${filename}.html`;
+            }
+        }
+    }
+});
 
 
 interface XsltTransformConfig extends PipelineNodeConfig {
@@ -22,6 +58,9 @@ interface XsltTransformConfig extends PipelineNodeConfig {
     };
     outputFilenameMapping?: (inputPath: string) => string;
     resultDocumentsDir?: string;
+    initialTemplate?: string;
+    stylesheetParams?: Record<string, any | ((inputPath: string) => any)>;
+    initialMode?: string;
 }
 
 export class XsltTransformNode extends PipelineNode<XsltTransformConfig, "transformed" | "result-documents"> {
@@ -63,7 +102,7 @@ export class XsltTransformNode extends PipelineNode<XsltTransformConfig, "transf
                 return [{
                     node: compileNode,
                     outputReference: 'compiledStylesheet',
-                    replaceInput: 'sefStylesheet'
+                    replaceInput: 'sefStylesheet',
                 }];
             }
         }
@@ -98,10 +137,32 @@ export class XsltTransformNode extends PipelineNode<XsltTransformConfig, "transf
                 (this.config.outputFilenameMapping?.(sefStylesheetPath) ?? context.getBuildPath(this.name, sefStylesheetPath, '.html')) :
                 outputFilenameMapper(item),
             async (sourcePath) => {
-
+                // TODO: maybe we can get document() calls from SaxonJs getPlatform().readFile
                 const transformOptions: any = {
                     stylesheetFileName: sefStylesheetPath,
-                    destination: 'serialized'
+                    destination: 'serialized',
+                    collectionFinder: (uri: string) => {
+                        let collectionPath = uri
+                        if (collectionPath.startsWith('file:')) {
+                            collectionPath = collectionPath.substring(5);
+                        }
+                        context.log(`  - Collection finder: ${collectionPath}`);
+                        const files = fsSync.globSync(collectionPath);
+                        const platform = SaxonJS.internals.getPlatform();
+                        const results = files.map(file => {
+                            const content = fsSync.readFileSync(file, 'utf-8');
+                            const doc = platform.parseXmlFromString(content);
+                            // Set the document URI property that SaxonJS uses for document-uri()
+                            // This matches how SaxonJS sets _saxonDocUri when loading documents
+                            (doc as any)._saxonDocUri = `file://${path.resolve(file)}`;
+                            return doc;
+                        })
+                        context.log(`  - Collection finder: ${results.length} files found`);
+                        return results
+                    },
+                    ...this.config.initialTemplate ? {initialTemplate: this.config.initialTemplate} : {},
+                    ...this.config.stylesheetParams ? {stylesheetParams: this.resolveStylesheetParams(sourcePath)} : {},
+                    ...this.config.initialMode ? {initialMode: this.config.initialMode} : {},
                 };
 
                 if (!isNoSourceMode) {
@@ -113,6 +174,8 @@ export class XsltTransformNode extends PipelineNode<XsltTransformConfig, "transf
                     (this.config.outputFilenameMapping?.(sefStylesheetPath) ?? sefStylesheetPath.replace('.sef.json', '.html')) :
                     outputFilenameMapper(sourcePath);
 
+                // Ensure directory exists before writing
+                await fs.mkdir(path.dirname(outputPath), { recursive: true });
                 await fs.writeFile(outputPath, result.principalResult);
                 context.log(`  - Generated: ${outputPath}`);
             }
@@ -122,5 +185,19 @@ export class XsltTransformNode extends PipelineNode<XsltTransformConfig, "transf
             transformed: [r.output],
             "result-documents": []
         }));
+    }
+
+    private resolveStylesheetParams(sourcePath: string): Record<string, any> {
+        if (!this.config.stylesheetParams) return {};
+
+        const resolved: Record<string, any> = {};
+        for (const [key, value] of Object.entries(this.config.stylesheetParams)) {
+            if (typeof value === 'function') {
+                resolved[key] = value(sourcePath);
+            } else {
+                resolved[key] = value;
+            }
+        }
+        return resolved;
     }
 }

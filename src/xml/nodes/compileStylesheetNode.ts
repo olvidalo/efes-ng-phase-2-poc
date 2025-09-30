@@ -4,7 +4,7 @@ import {fork} from "child_process";
 import fs from "node:fs/promises";
 
 // @ts-ignore
-import {getResource, XPath} from 'saxon-js';
+import {getResource, XPath} from 'saxonjs-he';
 
 
 interface CompileStylesheetConfig extends PipelineNodeConfig {
@@ -13,6 +13,7 @@ interface CompileStylesheetConfig extends PipelineNodeConfig {
     outputFilename?: string;
 }
 
+// TODO: need to preserve the original path somehow, maybe
 export class CompileStylesheetNode extends PipelineNode<CompileStylesheetConfig, "compiledStylesheet"> {
     async run(context: PipelineContext) {
         const xsltPath = await context.resolveInput(this.inputs.xslt);
@@ -36,12 +37,15 @@ export class CompileStylesheetNode extends PipelineNode<CompileStylesheetConfig,
 
                 try {
                     await new Promise<void>((resolve, reject) => {
-                        const xslt3Path = require.resolve('xslt3');
+                        const xslt3Path = require.resolve('xslt3-he');
 
                         const child = fork(xslt3Path, [
                             `-xsl:${xsltPath[0]}`,
                             `-export:${sefPath}`,
-                            '-relocate:on',
+                            // TODO: find out whether we should rather produce relocatable stylesheets
+                            //       and have the user provide the base URI in the xslt transform node configuration
+                            // '-relocate:on',
+                            `-stublib:${path.resolve('kiln-functions-stub.json')}`,  // Register extension function signatures
                             '-nogo'
                         ], {
                             silent: true // Capture stdio
