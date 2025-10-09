@@ -184,7 +184,7 @@ export abstract class PipelineNode<TConfig extends PipelineNodeConfig = Pipeline
             outputs: Record<TOutput, string[]>;
             discoveredDependencies?: string[];
         }>
-    ): Promise<Array<{ item: string, outputs: Record<TOutput, string[]>, cached: boolean }>> {
+    ): Promise<Array<{ item: string, outputs: NodeOutput<TOutput>, cached: boolean }>> {
         const contentSignature = await this.getContentSignature(context);
 
         // Extract fileRef paths and resolve from() references for cache entries
@@ -213,6 +213,11 @@ export abstract class PipelineNode<TConfig extends PipelineNodeConfig = Pipeline
         context.log(`Cache lookup - contentSignature: ${contentSignature}`);
         await context.cache.cleanExcept(contentSignature, cacheKeys);
 
+        // NOTE: Cache validation could be parallelized with Promise.all() for potential speedup
+        // on workloads with high cache hit rates (80%+) and slow I/O. However, testing showed
+        // that for typical workloads (low cache hit rate, fast SSD), the Promise coordination
+        // overhead outweighs benefits. Parallelizing the actual work (via worker threads) is
+        // more impactful than parallelizing cache validation.
         const results = [];
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
@@ -316,6 +321,7 @@ export interface PipelineContext {
 export class Pipeline {
     private graph = new DepGraph<PipelineNode>();
     private nodeOutputs = new Map<string, NodeOutput<any>[]>;
+    private nodeTimings = new Map<string, number>();
     private cache: CacheManager;
 
     constructor(
@@ -416,6 +422,7 @@ export class Pipeline {
     }
 
     async run() {
+        const pipelineStart = performance.now();
         console.log(`Running pipeline ${this.name}`);
         console.log(`Number of nodes: ${this.graph.size()}`);
 
@@ -545,6 +552,7 @@ export class Pipeline {
 
         for (const nodeName of executionOrder) {
             const node = this.graph.getNodeData(nodeName);
+            const nodeStart = performance.now();
             context.log(`▶ Running node: ${node.name}`);
 
             try {
@@ -552,7 +560,9 @@ export class Pipeline {
                 // context.log(`  → Generated: ${JSON.stringify(output)}`);
 
                 this.nodeOutputs.set(node.name, output);
-                context.log(`  - Completed: ${node.name}`);
+                const nodeTime = (performance.now() - nodeStart) / 1000;
+                this.nodeTimings.set(node.name, nodeTime);
+                context.log(`  - Completed: ${node.name} (${nodeTime.toFixed(2)}s)`);
             } catch (err: any) {
                 context.log(`  - Failed: ${node.name}`);
                 context.log(`    ${err.message}`);
@@ -560,7 +570,17 @@ export class Pipeline {
             }
         }
 
-        context.log(`Pipeline completed.`);
+        const pipelineTime = ((performance.now() - pipelineStart) / 1000).toFixed(2);
+        context.log(`Pipeline completed in ${pipelineTime}s`);
+
+        // Print timing summary
+        context.log(`\nNode timing summary:`);
+        const timings = Array.from(this.nodeTimings.entries())
+            .sort((a, b) => b[1] - a[1]); // Sort by time, slowest first
+
+        for (const [nodeName, time] of timings) {
+            context.log(`  ${nodeName.padEnd(40)} ${time.toFixed(2)}s`);
+        }
     }
 
     /**

@@ -28,22 +28,31 @@ SaxonJS.registerExtensionFunctions({
                 // matchId is like 'local-epidoc-display-html'
                 // params is an iterator of [language, filename]
                 const paramArray = Array.from(params);
-                console.log(paramArray)
-                console.log(`url-for-match(${matchId}, ${paramArray}, ${priority})`);
+                // TODO: debug logging
+                // console.log(`url-for-match(${matchId}, ${paramArray}, ${priority})`);
                 const language = paramArray[0] || 'en';
                 const filename = paramArray[1] || 'unknown';
 
                 const routePatterns: Record<string, string> = {
                     'local-epidoc-display-html': `/${language}/inscriptions/${filename}.html`,
+                    'local-epidoc-display-xml': `/${language}/xml/${filename}.xml`,
+                    'local-epidoc-zip': `/${language}/inscriptions.zip`,
                     'local-epidoc-index-display': `/${language}/inscriptions/`,
                     'local-tei-display-html': `/${language}/texts/${filename}.html`,
                     'local-home-page': `/${language}/`,
                     'local-concordance-bibliography': `/${language}/concordances/bibliography/`,
                     'local-concordance-bibliography-item': `/${language}/concordances/bibliography/${filename}.html`,
                     'local-index-display-html': `/${language}/indices/${paramArray[1]}/${paramArray[2]}.html`,
+                    'local-search': `/${language}/search/`,
+                    'local-indices-type-display': `/${language}/indices/${filename}`,
                 };
 
-                return routePatterns[matchId] || `/${language}/${filename}.html`;
+                const url = routePatterns[matchId];
+                if (!url) {
+                    throw new Error(`Unknown matchId passed to kiln:url-for-match: ${matchId}`);
+                }
+
+                return url
             }
         }
     }
@@ -195,7 +204,7 @@ export class SefTransformNode extends PipelineNode<SefTransformConfig, "transfor
                     stylesheetFileName: sefStylesheetPath,
                     destination: 'serialized',
                     collectionFinder: (uri: string) => {
-                        let collectionPath = uri
+                        let collectionPath = decodeURI(uri)
                         if (collectionPath.startsWith('file:')) {
                             collectionPath = collectionPath.substring(5);
                         }
