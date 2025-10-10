@@ -218,7 +218,11 @@ export abstract class PipelineNode<TConfig extends PipelineNodeConfig = Pipeline
         // that for typical workloads (low cache hit rate, fast SSD), the Promise coordination
         // overhead outweighs benefits. Parallelizing the actual work (via worker threads) is
         // more impactful than parallelizing cache validation.
+
+        // Phase 1: Cache validation (sequential) - identify cache hits and misses
         const results = [];
+        const cacheMisses: Array<{item: string, cacheKey: string, index: number}> = [];
+
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             const cacheKey = cacheKeys[i];
@@ -226,82 +230,98 @@ export abstract class PipelineNode<TConfig extends PipelineNodeConfig = Pipeline
             const cached = await context.cache.getCache(contentSignature, cacheKey);
             if (!cached) {
                 context.log(`  - Cache miss for ${item}: no cache entry found (key: ${cacheKey.substring(0, 50)}...)`);
+                cacheMisses.push({item, cacheKey, index: i});
+                results[i] = null; // Placeholder
+                continue;
             }
-            if (cached) {
-                // Recalculate expected paths based on CURRENT config
-                const cachedBaseDir = cached.outputBaseDir;
-                const newBaseDir = getOutputDir();
-                const newOutputsByKey: Record<TOutput, string[]> = {} as Record<TOutput, string[]>;
 
-                for (const [outputKey, cachedPaths] of Object.entries(cached.outputsByKey)) {
-                    // Try to recalculate path using current config
-                    const recalculatedPath = getOutputPath(item, outputKey as TOutput);
+            // Recalculate expected paths based on CURRENT config
+            const cachedBaseDir = cached.outputBaseDir;
+            const newBaseDir = getOutputDir();
+            const newOutputsByKey: Record<TOutput, string[]> = {} as Record<TOutput, string[]>;
 
-                    if (recalculatedPath !== undefined) {
-                        // Can recalculate (primary outputs) - use current config
-                        newOutputsByKey[outputKey as TOutput] = [recalculatedPath];
-                    } else {
-                        // Can't recalculate (secondary outputs) - reconstruct from cached structure
-                        const newPaths: string[] = [];
-                        for (const cachedPath of cachedPaths) {
-                            // Extract relative path from cached base directory
-                            const relativePath = path.relative(cachedBaseDir, cachedPath);
+            for (const [outputKey, cachedPaths] of Object.entries(cached.outputsByKey)) {
+                // Try to recalculate path using current config
+                const recalculatedPath = getOutputPath(item, outputKey as TOutput);
 
-                            // Validate: ensure path doesn't escape (no ../ at start)
-                            if (relativePath.startsWith('..')) {
-                                throw new Error(`Cached output path escapes base directory: ${cachedPath} (base: ${cachedBaseDir})`);
-                            }
-
-                            // Reconstruct path in new base directory
-                            const expectedPath = path.join(newBaseDir, relativePath);
-                            newPaths.push(expectedPath);
-                        }
-                        newOutputsByKey[outputKey as TOutput] = newPaths;
-                    }
-                }
-
-                // Validate dependencies (regardless of where outputs currently are)
-                const dependenciesValid = await context.cache.isValid(cached);
-
-                if (!dependenciesValid) {
-                    context.log(`  - Cache miss for ${item}: dependencies changed`);
+                if (recalculatedPath !== undefined) {
+                    // Can recalculate (primary outputs) - use current config
+                    newOutputsByKey[outputKey as TOutput] = [recalculatedPath];
                 } else {
-                    // Copy files if needed (cross-node reuse)
-                    // TODO: Could optimize by checking if file already exists at expectedPath with same hash
-                    for (const [outputKey, cachedPaths] of Object.entries(cached.outputsByKey)) {
-                        const expectedPaths = newOutputsByKey[outputKey as TOutput];
-                        for (let i = 0; i < cachedPaths.length; i++) {
-                            const cachedPath = cachedPaths[i];
-                            const expectedPath = expectedPaths[i];
-                            if (cachedPath !== expectedPath) {
-                                // Cross-node reuse - copy to expected location
-                                await context.cache.copyToExpectedPath(cachedPath, expectedPath);
-                            }
-                        }
-                    }
+                    // Can't recalculate (secondary outputs) - reconstruct from cached structure
+                    const newPaths: string[] = [];
+                    for (const cachedPath of cachedPaths) {
+                        // Extract relative path from cached base directory
+                        const relativePath = path.relative(cachedBaseDir, cachedPath);
 
-                    context.log(`  - Skipping: ${item} (cached)`);
-                    results.push({item, outputs: newOutputsByKey, cached: true});
-                    continue;
+                        // Validate: ensure path doesn't escape (no ../ at start)
+                        if (relativePath.startsWith('..')) {
+                            throw new Error(`Cached output path escapes base directory: ${cachedPath} (base: ${cachedBaseDir})`);
+                        }
+
+                        // Reconstruct path in new base directory
+                        const expectedPath = path.join(newBaseDir, relativePath);
+                        newPaths.push(expectedPath);
+                    }
+                    newOutputsByKey[outputKey as TOutput] = newPaths;
                 }
             }
 
-            const processed = await performWork(item);
+            // Validate dependencies (regardless of where outputs currently are)
+            const dependenciesValid = await context.cache.isValid(cached);
 
-            // Build unified cache entry
-            const cacheEntry = await context.cache.buildCacheEntry(
-                [item],                    // Item files
-                processed.outputs,         // Output files by key
-                getOutputDir(),            // Output base directory
-                cacheKey,                  // Cache key
-                processed.discoveredDependencies,    // Discovered dependencies
-                configDependencyPaths      // Config dependencies (FileRefs + resolved from() references)
-            );
-            await context.cache.setCache(contentSignature, cacheKey, cacheEntry);
+            if (!dependenciesValid) {
+                context.log(`  - Cache miss for ${item}: dependencies changed`);
+                cacheMisses.push({item, cacheKey, index: i});
+                results[i] = null; // Placeholder
+            } else {
+                // Copy files if needed (cross-node reuse)
+                // TODO: Could optimize by checking if file already exists at expectedPath with same hash
+                for (const [outputKey, cachedPaths] of Object.entries(cached.outputsByKey)) {
+                    const expectedPaths = newOutputsByKey[outputKey as TOutput];
+                    for (let i = 0; i < cachedPaths.length; i++) {
+                        const cachedPath = cachedPaths[i];
+                        const expectedPath = expectedPaths[i];
+                        if (cachedPath !== expectedPath) {
+                            // Cross-node reuse - copy to expected location
+                            await context.cache.copyToExpectedPath(cachedPath, expectedPath);
+                        }
+                    }
+                }
 
-            results.push({item, outputs: processed.outputs, cached: false});
+                context.log(`  - Skipping: ${item} (cached)`);
+                results[i] = {item, outputs: newOutputsByKey, cached: true};
+            }
         }
-        return results;
+
+        // Phase 2: Work execution (parallel) - process all cache misses concurrently
+        if (cacheMisses.length > 0) {
+            const workPromises = cacheMisses.map(async ({item, cacheKey, index}) => {
+                const processed = await performWork(item);
+
+                // Build unified cache entry
+                const cacheEntry = await context.cache.buildCacheEntry(
+                    [item],                    // Item files
+                    processed.outputs,         // Output files by key
+                    getOutputDir(),            // Output base directory
+                    cacheKey,                  // Cache key
+                    processed.discoveredDependencies,    // Discovered dependencies
+                    configDependencyPaths      // Config dependencies (FileRefs + resolved from() references)
+                );
+
+                return {index, item, processed, cacheEntry, cacheKey};
+            });
+
+            const processedItems = await Promise.all(workPromises);
+
+            // Phase 3: Cache storage (parallel) - save cache entries
+            await Promise.all(processedItems.map(async ({index, item, processed, cacheEntry, cacheKey}) => {
+                await context.cache.setCache(contentSignature, cacheKey, cacheEntry);
+                results[index] = {item, outputs: processed.outputs, cached: false};
+            }));
+        }
+
+        return results.filter(r => r !== null);
     }
 }
 

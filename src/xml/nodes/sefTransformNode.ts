@@ -7,57 +7,14 @@ import {
     type PipelineNodeConfig
 } from "../../core/pipeline";
 import path from "node:path";
-import fs from "node:fs/promises";
-import fsSync from "node:fs";
+import { readFile } from "node:fs/promises";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+import { WorkerPool } from "../workerPool";
 
 // @ts-ignore
 // Register Kiln extension functions at module load
 // @ts-ignore
-import SaxonJS, {transform} from 'saxonjs-he';
-
-// Register the kiln:url-for-match function implementation
-SaxonJS.registerExtensionFunctions({
-    "namespace": "http://www.kcl.ac.uk/artshums/depts/ddh/kiln/ns/1.0",
-    "signatures": {
-        "url-for-match": {
-            "as": "xs:string",
-            "param": ["xs:string", "xs:string*", "xs:integer"],
-            "arity": [3],
-            "impl":  function(matchId: string, params: any, priority: number): string {
-                // Simple implementation: generate static URLs based on parameters
-                // matchId is like 'local-epidoc-display-html'
-                // params is an iterator of [language, filename]
-                const paramArray = Array.from(params);
-                // TODO: debug logging
-                // console.log(`url-for-match(${matchId}, ${paramArray}, ${priority})`);
-                const language = paramArray[0] || 'en';
-                const filename = paramArray[1] || 'unknown';
-
-                const routePatterns: Record<string, string> = {
-                    'local-epidoc-display-html': `/${language}/inscriptions/${filename}.html`,
-                    'local-epidoc-display-xml': `/${language}/xml/${filename}.xml`,
-                    'local-epidoc-zip': `/${language}/inscriptions.zip`,
-                    'local-epidoc-index-display': `/${language}/inscriptions/`,
-                    'local-tei-display-html': `/${language}/texts/${filename}.html`,
-                    'local-home-page': `/${language}/`,
-                    'local-concordance-bibliography': `/${language}/concordances/bibliography/`,
-                    'local-concordance-bibliography-item': `/${language}/concordances/bibliography/${filename}.html`,
-                    'local-index-display-html': `/${language}/indices/${paramArray[1]}/${paramArray[2]}.html`,
-                    'local-search': `/${language}/search/`,
-                    'local-indices-type-display': `/${language}/indices/${filename}`,
-                };
-
-                const url = routePatterns[matchId];
-                if (!url) {
-                    throw new Error(`Unknown matchId passed to kiln:url-for-match: ${matchId}`);
-                }
-
-                return url
-            }
-        }
-    }
-});
-
 
 interface SefTransformConfig extends PipelineNodeConfig {
     items?: Input;  // sourceXml files (optional for no-source transforms)
@@ -79,6 +36,32 @@ interface SefTransformConfig extends PipelineNodeConfig {
 
 
 export class SefTransformNode extends PipelineNode<SefTransformConfig, "transformed" | "result-documents"> {
+    private static workerPool: WorkerPool | null = null;
+
+    // Shared worker pool for all SefTransformNode instances
+    private static getWorkerPool(): WorkerPool {
+        if (!SefTransformNode.workerPool) {
+            // In dev: src/xml/nodes/ -> ../saxonWorker.ts
+            // In prod: dist/ -> saxonWorker.js
+            const currentDir = path.dirname(fileURLToPath(import.meta.url));
+            const devPath = path.resolve(currentDir, '../saxonWorker.ts');
+            const prodPath = path.resolve(currentDir, 'saxonWorker.js');
+
+            const workerPath = fs.existsSync(prodPath) ? prodPath : devPath;
+            SefTransformNode.workerPool = new WorkerPool(6, workerPath);
+        }
+        return SefTransformNode.workerPool;
+    }
+
+    // Terminate the shared worker pool
+    // TODO: This should be handled via pipeline cleanup hooks in the future,
+    // so pipeline code doesn't need to know about specific node types
+    static async terminateWorkerPool(): Promise<void> {
+        if (SefTransformNode.workerPool) {
+            await SefTransformNode.workerPool.terminate();
+            SefTransformNode.workerPool = null;
+        }
+    }
 
     // Helper: Calculate transformed output path (DRY - reused in getOutputPath and performWork)
     private getTransformedPath(item: string, context: PipelineContext): string {
@@ -116,6 +99,9 @@ export class SefTransformNode extends PipelineNode<SefTransformConfig, "transfor
             ? (this.config.config.sefStylesheet as FileRef).path
             : (await context.resolveInput(this.config.config.sefStylesheet as Input))[0];
 
+        const sefStylesheetJson = await readFile(sefStylesheetPath, 'utf-8')
+        const sefStylesheet = JSON.parse(sefStylesheetJson)
+
         // Handle no-source mode (stylesheet uses document() for input)
         const sourcePaths = this.items ?
             await context.resolveInput(this.items) :
@@ -123,44 +109,6 @@ export class SefTransformNode extends PipelineNode<SefTransformConfig, "transfor
 
         const isNoSourceMode = !this.items;
         context.log(`${isNoSourceMode ? 'Running stylesheet' : `Transforming ${sourcePaths.length} file(s)`} with ${sefStylesheetPath}`);
-
-        const outputFilenameMapper = this.config.outputConfig?.outputFilenameMapping ?
-            ((inputPath: string) => this.config.outputConfig!.outputFilenameMapping!(context.stripBuildPrefix(inputPath))) :
-            ((inputPath: string) => context.getBuildPath(this.name, inputPath, this.config.outputConfig?.resultExtension ??'.html'));
-
-        const platform = SaxonJS.internals.getPlatform();
-
-        // TODO: does not work because of the shared platform object, we cannot
-        //       know from which node we are running. We could replace the old functions
-        //       back, but that would be unsafe when running in parallel
-        //       (we would be replacing the functions of another node)
-        //       Maybe use Worker threads for each node?
-        //       The aim of this code is tracking read files that are not input files for
-        //       dependency discovery, (e.g. files read by document() calls in the stylesheet)
-
-        // const that = this;
-        // let currentSourcePath;
-        // const absoluteStylesheetPath = path.resolve(sefStylesheetPath);
-        // const absoluteSourceFilePaths = sourcePaths.map(p => path.resolve(p));
-        //
-        // const replaceReadFile = (funcName: "readFile" | "readFileSync") => {
-        //     const oldFunc = platform[funcName];
-        //     platform[funcName] = function() {
-        //         const colonIndex= arguments[0].indexOf(':');
-        //         const absoluteReadFilePath = path.resolve(arguments[0].substring(colonIndex + 1));
-        //
-        //         // console.log({absoluteReadFilePath, absoluteStylesheetPath, absoluteSourceFilePaths})
-        //         if (![absoluteStylesheetPath, ...absoluteSourceFilePaths].includes(absoluteReadFilePath)) {
-        //             console.log({
-        //                 node: that.config.name, absoluteReadFilePath
-        //             });
-        //         }
-        //         return oldFunc.apply(platform, arguments);
-        //     }
-        // }
-        //
-        // replaceReadFile('readFile');
-        // replaceReadFile('readFileSync');
 
         const results = await this.withCache<"transformed" | "result-documents">(
             context,
@@ -196,83 +144,40 @@ export class SefTransformNode extends PipelineNode<SefTransformConfig, "transfor
                 throw new Error(`Unknown output key: ${outputKey}`);
             },
             async (sourcePath) => {
-
                 const outputPath = this.getTransformedPath(sourcePath, context);
+                const baseDir = path.dirname(outputPath);
 
-                // TODO: maybe we can get document() calls from SaxonJs getPlatform().readFile
-                const transformOptions: any = {
-                    stylesheetFileName: sefStylesheetPath,
-                    destination: 'serialized',
-                    collectionFinder: (uri: string) => {
-                        let collectionPath = decodeURI(uri)
-                        if (collectionPath.startsWith('file:')) {
-                            collectionPath = collectionPath.substring(5);
-                        }
-                        context.log(`  - Collection finder: ${collectionPath}`);
-                        const files = fsSync.globSync(collectionPath);
-                        const results = files.map(file => {
-                            const content = fsSync.readFileSync(file, 'utf-8');
-                            const doc = platform.parseXmlFromString(content);
-                            // Set the document URI property that SaxonJS uses for document-uri()
-                            // This matches how SaxonJS sets _saxonDocUri when loading documents
-                            (doc as any)._saxonDocUri = `file://${path.resolve(file)}`;
-                            return doc;
-                        })
-                        context.log(`  - Collection finder: ${results.length} files found`);
-                        return results
-                    },
-                    deliverResultDocument: () => ({
-                        destination: "serialized",
-                    }),
-                    ...this.config.config.initialTemplate ? {initialTemplate: this.config.config.initialTemplate} : {},
-                    ...this.config.config.stylesheetParams ? {stylesheetParams: await this.resolveStylesheetParams(context, sourcePath)} : {},
-                    ...this.config.config.initialMode ? {initialMode: this.config.config.initialMode} : {},
-                    ...this.config.config.serializationParams ? {outputProperties: this.config.config.serializationParams} : {},
+                // Prepare transform options for worker (no callbacks - they're in the worker)
+                const transformOptions = {
+                    initialTemplate: this.config.config.initialTemplate,
+                    stylesheetParams: await this.resolveStylesheetParams(context, sourcePath),
+                    initialMode: this.config.config.initialMode,
+                    outputProperties: this.config.config.serializationParams
                 };
 
-                if (!isNoSourceMode) {
-                    transformOptions.sourceFileName = sourcePath;
+                // Execute transform in worker thread
+                const workerPool = SefTransformNode.getWorkerPool();
+                const result = await workerPool.execute<{
+                    outputPath: string;
+                    resultDocumentPaths: string[];
+                }>({
+                    sourcePath: isNoSourceMode ? null : sourcePath,
+                    sefStylesheetPath,
+                    stylesheetInternal: sefStylesheet,
+                    outputPath,
+                    baseDir,
+                    transformOptions
+                });
+
+                context.log(`  - Generated: ${result.outputPath}`);
+                for (const docPath of result.resultDocumentPaths) {
+                    context.log(`  - Result document: ${docPath}`);
                 }
-
-                const result = await transform(transformOptions);
-
-                // Write principal result
-                await fs.mkdir(path.dirname(outputPath), { recursive: true });
-                await fs.writeFile(outputPath, result.principalResult);
-                context.log(`  - Generated: ${outputPath}`);
-
-                // Handle result documents (xsl:result-document outputs)
-                // XSLT controls relative path structure via href attribute
-                const resultDocumentPaths: string[] = [];
-                if (result.resultDocuments) {
-                    const baseDir = path.dirname(outputPath);
-
-                    for (const [uri, content] of Object.entries(result.resultDocuments)) {
-                        // uri contains XSLT-relative path (e.g., "result-documents/bib-123.xml" or just "bib-123.xml")
-                        const relativePath = uri.startsWith('file://') ? uri.substring(7) : uri;
-                        const docPath = path.normalize(path.join(baseDir, relativePath));
-
-                        // Security: ensure result stays within node's build directory
-                        if (!docPath.startsWith(baseDir)) {
-                            throw new Error(`Result-document path escapes build directory: ${relativePath}`);
-                        }
-
-                        // Ensure subdirectories exist (XSLT might specify nested paths)
-                        await fs.mkdir(path.dirname(docPath), { recursive: true });
-                        await fs.writeFile(docPath, content as string);
-                        resultDocumentPaths.push(docPath);
-                        context.log(`  - Result document: ${docPath}`);
-                    }
-                }
-
-                // TODO: Future improvement - use getOutputPath directly in deliverResultDocument callback
-                // This would make Saxon call getOutputPath when writing result-documents, ensuring
-                // consistency between cache miss (writing) and cache hit (path recalculation)
 
                 return {
                     outputs: {
-                        transformed: [outputPath],
-                        "result-documents": resultDocumentPaths
+                        transformed: [result.outputPath],
+                        "result-documents": result.resultDocumentPaths
                     }
                 };
             }
