@@ -1,4 +1,9 @@
 import { Worker } from "node:worker_threads";
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+
+const require = createRequire(import.meta.url);
+const tsxEsm = require.resolve('tsx/esm'); // absolute path
 
 interface WorkerJob {
     job: any;
@@ -17,7 +22,11 @@ export class WorkerPool {
     ) {
 
         for (let i = 0; i < poolSize; i++) {
-            const worker = new Worker(workerPath, {execArgv: ['--require', 'tsx/cjs']});
+            // tsx requires --import but that doesn't work for worker threads
+            // Workaround: use tsx CLI to spawn the worker instead of node
+            const worker = new Worker(new URL(workerPath, import.meta.url), {
+                execArgv: ['--experimental-strip-types']
+            });
 
             worker.on("message", (message) => {
                 const job = this.activeJobs.get(worker);

@@ -4,6 +4,9 @@ import {glob} from "glob";
 import path from "node:path";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
+import {fileURLToPath} from "node:url";
+import {WorkerPool} from "../xml/workerPool";
 
 interface NodeOutputReference {
     node: PipelineNode<any, any>;
@@ -332,6 +335,7 @@ export interface PipelineContext {
 
     cache: CacheManager;
     buildDir: string;
+    workerPool: WorkerPool;
 
     getBuildPath(nodeName: string, inputPath: string, newExtension?: string): string;
     stripBuildPrefix(inputPath: string): string;
@@ -343,6 +347,7 @@ export class Pipeline {
     private nodeOutputs = new Map<string, NodeOutput<any>[]>;
     private nodeTimings = new Map<string, number>();
     private cache: CacheManager;
+    private workerPool: WorkerPool;
 
     constructor(
         public readonly name: string,
@@ -350,6 +355,14 @@ export class Pipeline {
         public readonly cacheDir: string = '.efes-cache'
     ) {
         this.cache = new CacheManager(cacheDir);
+
+        // Create shared worker pool with generic worker
+        const currentDir = path.dirname(fileURLToPath(import.meta.url));
+        const devPath = path.resolve(currentDir, '../xml/genericWorker.ts');
+        const prodPath = path.resolve(currentDir, 'genericWorker.js');
+        const workerPath = fsSync.existsSync(prodPath) ? prodPath : devPath;
+
+        this.workerPool = new WorkerPool(6, workerPath);
     }
 
     addNode(...nodes: PipelineNode<any, any>[]): this {
@@ -520,6 +533,7 @@ export class Pipeline {
             log: (message: string) => console.log(`  [${this.name}] ${message}`),
             cache: this.cache,
             buildDir: this.buildDir,
+            workerPool: this.workerPool,
             getBuildPath: (nodeName: string, inputPath: string, newExtension?: string): string => {
                 let relativePath = inputPath;
 
@@ -601,6 +615,9 @@ export class Pipeline {
         for (const [nodeName, time] of timings) {
             context.log(`  ${nodeName.padEnd(40)} ${time.toFixed(2)}s`);
         }
+
+        // Cleanup: terminate worker pool
+        await this.workerPool.terminate();
     }
 
     /**

@@ -10,7 +10,6 @@ import path from "node:path";
 import { readFile } from "node:fs/promises";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { WorkerPool } from "../workerPool";
 
 // @ts-ignore
 // Register Kiln extension functions at module load
@@ -36,32 +35,6 @@ interface SefTransformConfig extends PipelineNodeConfig {
 
 
 export class SefTransformNode extends PipelineNode<SefTransformConfig, "transformed" | "result-documents"> {
-    private static workerPool: WorkerPool | null = null;
-
-    // Shared worker pool for all SefTransformNode instances
-    private static getWorkerPool(): WorkerPool {
-        if (!SefTransformNode.workerPool) {
-            // In dev: src/xml/nodes/ -> ../saxonWorker.ts
-            // In prod: dist/ -> saxonWorker.js
-            const currentDir = path.dirname(fileURLToPath(import.meta.url));
-            const devPath = path.resolve(currentDir, '../saxonWorker.ts');
-            const prodPath = path.resolve(currentDir, 'saxonWorker.js');
-
-            const workerPath = fs.existsSync(prodPath) ? prodPath : devPath;
-            SefTransformNode.workerPool = new WorkerPool(6, workerPath);
-        }
-        return SefTransformNode.workerPool;
-    }
-
-    // Terminate the shared worker pool
-    // TODO: This should be handled via pipeline cleanup hooks in the future,
-    // so pipeline code doesn't need to know about specific node types
-    static async terminateWorkerPool(): Promise<void> {
-        if (SefTransformNode.workerPool) {
-            await SefTransformNode.workerPool.terminate();
-            SefTransformNode.workerPool = null;
-        }
-    }
 
     // Helper: Calculate transformed output path (DRY - reused in getOutputPath and performWork)
     private getTransformedPath(item: string, context: PipelineContext): string {
@@ -156,11 +129,17 @@ export class SefTransformNode extends PipelineNode<SefTransformConfig, "transfor
                 };
 
                 // Execute transform in worker thread
-                const workerPool = SefTransformNode.getWorkerPool();
-                const result = await workerPool.execute<{
+                // Determine workload script path based on environment
+                const currentDir = path.dirname(fileURLToPath(import.meta.url));
+                const devWorkloadPath = path.resolve(currentDir, '../saxonWorkload.ts');
+                const prodWorkloadPath = path.resolve(currentDir, 'saxonWorkload.js');
+                const workloadScript = fs.existsSync(prodWorkloadPath) ? prodWorkloadPath : devWorkloadPath;
+
+                const result = await context.workerPool.execute<{
                     outputPath: string;
                     resultDocumentPaths: string[];
                 }>({
+                    workloadScript,
                     sourcePath: isNoSourceMode ? null : sourcePath,
                     sefStylesheetPath,
                     stylesheetInternal: sefStylesheet,

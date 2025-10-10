@@ -18,6 +18,8 @@
   "scripts": {
     "dev": "tsup --watch",
     "build": "tsup",
+    "build:scratch": "tsup --entry.main=scratch.ts",
+    "build:project2": "TSUP_ENTRY=project2/project2.ts tsup",
     "test": "vitest",
     "test:watch": "vitest watch",
     "typecheck": "tsc --noEmit",
@@ -27,7 +29,9 @@
     "@types/node": "22.16.0",
     "@typescript-eslint/eslint-plugin": "^8.44.1",
     "@typescript-eslint/parser": "^8.44.1",
+    "clinic": "^13.0.0",
     "eslint": "^9.36.0",
+    "ts-node": "^10.9.2",
     "tsup": "^8.5.0",
     "tsx": "^4.20.6",
     "typescript": "^5.9.2",
