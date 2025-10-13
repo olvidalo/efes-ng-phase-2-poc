@@ -13,6 +13,7 @@ interface WorkerJob {
 
 export class WorkerPool {
     private workers: Worker[] = [];
+    private workerIds = new Map<Worker, number>();
     private queue: WorkerJob[] = [];
     private activeJobs = new Map<Worker, WorkerJob>();
 
@@ -27,6 +28,8 @@ export class WorkerPool {
             const worker = new Worker(new URL(workerPath, import.meta.url), {
                 execArgv: ['--experimental-strip-types']
             });
+
+            this.workerIds.set(worker, i);
 
             worker.on("message", (message) => {
                 const job = this.activeJobs.get(worker);
@@ -83,9 +86,19 @@ export class WorkerPool {
         }
     }
 
+    getActiveWorkers(): Map<number, any> {
+        const activeWorkers = new Map<number, any>();
+        for (const [worker, job] of this.activeJobs.entries()) {
+            const workerId = this.workerIds.get(worker)!;
+            activeWorkers.set(workerId, job.job);
+        }
+        return activeWorkers;
+    }
+
     async terminate() {
         await Promise.all(this.workers.map(w => w.terminate()));
         this.workers = [];
+        this.workerIds.clear();
         this.activeJobs.clear();
         this.queue = [];
     }

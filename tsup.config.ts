@@ -1,9 +1,11 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig(() => {
-    // Build entry configuration - always include worker
+    // Build entry configuration - always include worker and workloads
     const entry: Record<string, string> = {
-        'saxonWorker': 'src/xml/saxonWorker.ts',  // Output to dist/saxonWorker.js
+        'genericWorker': 'src/xml/genericWorker.ts',      // Output to dist/genericWorker.js
+        'xml/saxonWorkload': 'src/xml/saxonWorkload.ts',  // Output to dist/xml/saxonWorkload.js
+        'xml/compileWorkload': 'src/xml/compileWorkload.ts', // Output to dist/xml/compileWorkload.js
     };
 
     // Add main entry based on environment variable or default

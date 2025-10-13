@@ -62,6 +62,13 @@ export abstract class PipelineNode<TConfig extends PipelineNodeConfig = Pipeline
     }
 
     /**
+     * Log a message with the node name prepended.
+     */
+    protected log(context: PipelineContext, message: string): void {
+        context.log(`  [${this.name}] ${message}`);
+    }
+
+    /**
      * Optional lifecycle hook called when this node is added to a pipeline.
      * Composite nodes can use this to expand their internal nodes.
      */
@@ -214,7 +221,7 @@ export abstract class PipelineNode<TConfig extends PipelineNodeConfig = Pipeline
 
         const cacheKeys = items.map(getCacheKey);
         context.log(`Cache lookup - contentSignature: ${contentSignature}`);
-        await context.cache.cleanExcept(contentSignature, cacheKeys);
+        // await context.cache.cleanExcept(contentSignature, cacheKeys);
 
         // NOTE: Cache validation could be parallelized with Promise.all() for potential speedup
         // on workloads with high cache hit rates (80%+) and slow I/O. However, testing showed
@@ -352,7 +359,8 @@ export class Pipeline {
     constructor(
         public readonly name: string,
         public readonly buildDir: string = '.efes-build',
-        public readonly cacheDir: string = '.efes-cache'
+        public readonly cacheDir: string = '.efes-cache',
+        public readonly executionMode: 'sequential' | 'parallel' | 'dynamic' = 'sequential'
     ) {
         this.cache = new CacheManager(cacheDir);
 
@@ -362,7 +370,7 @@ export class Pipeline {
         const prodPath = path.resolve(currentDir, 'genericWorker.js');
         const workerPath = fsSync.existsSync(prodPath) ? prodPath : devPath;
 
-        this.workerPool = new WorkerPool(6, workerPath);
+        this.workerPool = new WorkerPool(8, workerPath);
     }
 
     addNode(...nodes: PipelineNode<any, any>[]): this {
@@ -431,25 +439,32 @@ export class Pipeline {
             // Check items field for NodeOutputReference
             if (node.items && inputIsNodeOutputReference(node.items)) {
                 try {
-                    console.log(`Adding automatic dependency for node ${node.name}: ${node.items.node.name} (from items)`);
+                    // console.log(`Adding automatic dependency for node ${node.name}: ${node.items.node.name} (from items)`);
                     this.graph.addDependency(node.name, node.items.node.name);
                 } catch (err: any) {
                     throw new Error(`Failed to add automatic dependency for node ${node.name}: ${err.message}`);
                 }
             }
 
-            // Check config values for NodeOutputReferences
+            // Recursively check config for NodeOutputReferences
             if (node.config) {
-                for (const [key, value] of Object.entries(node.config)) {
-                    if (inputIsNodeOutputReference(value)) {
+                const findNodeReferences = (obj: any, path: string = 'config') => {
+                    if (inputIsNodeOutputReference(obj)) {
                         try {
-                            console.log(`Adding automatic dependency for node ${node.name}: ${value.node.name} (from config.${key})`);
-                            this.graph.addDependency(node.name, value.node.name);
+                            // console.log(`Adding automatic dependency for node ${node.name}: ${obj.node.name} (from ${path})`);
+                            this.graph.addDependency(node.name, obj.node.name);
                         } catch (err: any) {
                             throw new Error(`Failed to add automatic dependency for node ${node.name}: ${err.message}`);
                         }
+                    } else if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+                        // Recursively search nested objects
+                        for (const [key, value] of Object.entries(obj)) {
+                            findNodeReferences(value, `${path}.${key}`);
+                        }
                     }
-                }
+                };
+
+                findNodeReferences(node.config);
             }
         }
     }
@@ -465,8 +480,33 @@ export class Pipeline {
         // Setup automatic dependencies from NodeOutputReferences
         this.setupAutomaticDependencies();
 
+        // Track currently running nodes for supervisor
+        const runningNodes = new Set<string>();
+
         const executionOrder = this.graph.overallOrder();
-        console.log(executionOrder)
+
+        // Start supervisor that logs running nodes every 5 seconds
+        const supervisorInterval = setInterval(() => {
+            if (runningNodes.size > 0) {
+                const activeWorkers = this.workerPool.getActiveWorkers();
+                console.log(`\n[Supervisor] Currently running ${runningNodes.size} node(s), ${activeWorkers.size} worker(s) busy:`);
+                for (const nodeName of runningNodes) {
+                    console.log(`  ⏳ ${nodeName}`);
+                }
+                if (activeWorkers.size > 0) {
+                    console.log(`  Workers:`);
+                    for (const [workerId, job] of activeWorkers.entries()) {
+                        // Extract node name and file being processed
+                        const nodeName = job.nodeName || 'unknown';
+                        const fileName = job.xsltPath ? path.basename(job.xsltPath) :
+                                        job.sourcePath ? path.basename(job.sourcePath) :
+                                        'unknown';
+                        console.log(`    Worker ${workerId}: [${nodeName}] ${fileName}`);
+                    }
+                }
+            }
+        }, 5000);
+
         const context: PipelineContext = {
             resolveInput: async (input: Input): Promise<string[]> => {
 
@@ -584,40 +624,213 @@ export class Pipeline {
             getNodeOutputs: (nodeName: string) => this.nodeOutputs.get(nodeName)
         }
 
+        try {
+            // Execute nodes based on chosen execution mode
+            if (this.executionMode === 'sequential') {
+                await this.executeSequential(executionOrder, context, runningNodes);
+            } else if (this.executionMode === 'parallel') {
+                const waves = this.calculateWaves(executionOrder);
+                await this.executeParallel(waves, context, runningNodes);
+            } else {
+                // dynamic mode
+                await this.executeDynamic(executionOrder, context, runningNodes);
+            }
+
+            const pipelineTime = ((performance.now() - pipelineStart) / 1000).toFixed(2);
+            context.log(`Pipeline completed in ${pipelineTime}s`);
+
+            // Print timing summary
+            context.log(`\nNode timing summary:`);
+            const timings = Array.from(this.nodeTimings.entries())
+                .sort((a, b) => b[1] - a[1]); // Sort by time, slowest first
+
+            for (const [nodeName, time] of timings) {
+                context.log(`  ${nodeName.padEnd(40)} ${time.toFixed(2)}s`);
+            }
+        } finally {
+            // Always cleanup: stop supervisor and terminate worker pool
+            clearInterval(supervisorInterval);
+            await this.workerPool.terminate();
+        }
+    }
+
+    /**
+     * Calculate dependency waves for parallel execution.
+     * Nodes in the same wave have no dependencies on each other.
+     */
+    private calculateWaves(executionOrder: string[]): Map<number, string[]> {
+        const depths = new Map<string, number>();
+        const getDepth = (nodeName: string): number => {
+            if (depths.has(nodeName)) return depths.get(nodeName)!;
+
+            const deps = this.graph.dependenciesOf(nodeName);
+            const depth = deps.length === 0 ? 0 : Math.max(...deps.map(getDepth)) + 1;
+            depths.set(nodeName, depth);
+            return depth;
+        };
+
+        // Group nodes into waves by depth
+        const waveMap = new Map<number, string[]>();
+        for (const nodeName of executionOrder) {
+            const depth = getDepth(nodeName);
+            if (!waveMap.has(depth)) waveMap.set(depth, []);
+            waveMap.get(depth)!.push(nodeName);
+        }
+
+        return waveMap;
+    }
+
+    /**
+     * Execute nodes sequentially in topological order.
+     */
+    private async executeSequential(
+        executionOrder: string[],
+        context: PipelineContext,
+        runningNodes: Set<string>
+    ): Promise<void> {
         for (const nodeName of executionOrder) {
             const node = this.graph.getNodeData(nodeName);
             const nodeStart = performance.now();
-            context.log(`▶ Running node: ${node.name}`);
+            context.log(`  ▶ Running: ${node.name}`);
+
+            runningNodes.add(node.name);
 
             try {
                 const output = await node.run(context);
-                // context.log(`  → Generated: ${JSON.stringify(output)}`);
-
                 this.nodeOutputs.set(node.name, output);
                 const nodeTime = (performance.now() - nodeStart) / 1000;
                 this.nodeTimings.set(node.name, nodeTime);
-                context.log(`  - Completed: ${node.name} (${nodeTime.toFixed(2)}s)`);
+                context.log(`    ✓ Completed: ${node.name} (${nodeTime.toFixed(2)}s)`);
             } catch (err: any) {
-                context.log(`  - Failed: ${node.name}`);
-                context.log(`    ${err.message}`);
+                context.log(`    ✗ Failed: ${node.name}`);
+                context.log(`      ${err.message}`);
                 throw err;
+            } finally {
+                runningNodes.delete(node.name);
             }
         }
+    }
 
-        const pipelineTime = ((performance.now() - pipelineStart) / 1000).toFixed(2);
-        context.log(`Pipeline completed in ${pipelineTime}s`);
+    /**
+     * Execute nodes in parallel waves.
+     * Nodes within each wave run in parallel, waves run sequentially.
+     */
+    private async executeParallel(
+        waves: Map<number, string[]>,
+        context: PipelineContext,
+        runningNodes: Set<string>
+    ): Promise<void> {
+        const sortedWaves = Array.from(waves.entries()).sort((a, b) => a[0] - b[0]);
 
-        // Print timing summary
-        context.log(`\nNode timing summary:`);
-        const timings = Array.from(this.nodeTimings.entries())
-            .sort((a, b) => b[1] - a[1]); // Sort by time, slowest first
+        for (const [waveNum, nodeNames] of sortedWaves) {
+            context.log(`\n▶▶▶ Wave ${waveNum}: ${nodeNames.length} node(s) - ${nodeNames.join(', ')}`);
 
-        for (const [nodeName, time] of timings) {
-            context.log(`  ${nodeName.padEnd(40)} ${time.toFixed(2)}s`);
+            // Run all nodes in this wave in parallel
+            await Promise.all(nodeNames.map(async (nodeName) => {
+                const node = this.graph.getNodeData(nodeName);
+                const nodeStart = performance.now();
+                context.log(`  ▶ Running: ${node.name}`);
+
+                runningNodes.add(node.name);
+
+                try {
+                    const output = await node.run(context);
+                    this.nodeOutputs.set(node.name, output);
+                    const nodeTime = (performance.now() - nodeStart) / 1000;
+                    this.nodeTimings.set(node.name, nodeTime);
+                    context.log(`    ✓ Completed: ${node.name} (${nodeTime.toFixed(2)}s)`);
+                } catch (err: any) {
+                    context.log(`    ✗ Failed: ${node.name}`);
+                    context.log(`      ${err.message}`);
+                    throw err;
+                } finally {
+                    runningNodes.delete(node.name);
+                }
+            }));
+
+            context.log(`  ✓ Wave ${waveNum} complete`);
+        }
+    }
+
+    /**
+     * Execute nodes dynamically based on dependency readiness.
+     * Nodes start as soon as all their dependencies complete, maximizing parallelism.
+     */
+    private async executeDynamic(
+        executionOrder: string[],
+        context: PipelineContext,
+        runningNodes: Set<string>
+    ): Promise<void> {
+        const completed = new Set<string>();
+        const inProgress = new Set<string>();
+        const pending = new Set(executionOrder);
+        const errors: Error[] = [];
+
+        // Helper: Check if node's dependencies are all complete
+        const isReady = (nodeName: string): boolean => {
+            const deps = this.graph.dependenciesOf(nodeName);
+            return deps.every(dep => completed.has(dep));
+        };
+
+        // Helper: Run a single node
+        const runNode = async (nodeName: string): Promise<void> => {
+            const node = this.graph.getNodeData(nodeName);
+            const nodeStart = performance.now();
+            context.log(`  ▶ Running: ${node.name}`);
+
+            runningNodes.add(node.name);
+
+            try {
+                const output = await node.run(context);
+                this.nodeOutputs.set(node.name, output);
+                const nodeTime = (performance.now() - nodeStart) / 1000;
+                this.nodeTimings.set(node.name, nodeTime);
+                context.log(`    ✓ Completed: ${node.name} (${nodeTime.toFixed(2)}s)`);
+            } catch (err: any) {
+                context.log(`    ✗ Failed: ${node.name}`);
+                context.log(`      ${err.message}`);
+                errors.push(err);
+                throw err;
+            } finally {
+                runningNodes.delete(node.name);
+                inProgress.delete(nodeName);
+                completed.add(nodeName);
+            }
+        };
+
+        // Start all ready nodes (non-blocking)
+        const startReadyNodes = (): void => {
+            for (const nodeName of pending) {
+                if (!inProgress.has(nodeName) && isReady(nodeName)) {
+                    pending.delete(nodeName);
+                    inProgress.add(nodeName);
+
+                    // Run node and check for newly ready nodes when complete
+                    runNode(nodeName)
+                        .then(() => {
+                            if (errors.length === 0) {
+                                startReadyNodes();
+                            }
+                        })
+                        .catch(() => {
+                            // Error already logged in runNode, don't start new nodes
+                        });
+                }
+            }
+        };
+
+        // Initial kick-off
+        startReadyNodes();
+
+        // Wait for all nodes to complete or error
+        while (inProgress.size > 0 || (pending.size > 0 && errors.length === 0)) {
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
 
-        // Cleanup: terminate worker pool
-        await this.workerPool.terminate();
+        // If there were errors, throw the first one
+        if (errors.length > 0) {
+            throw errors[0];
+        }
     }
 
     /**

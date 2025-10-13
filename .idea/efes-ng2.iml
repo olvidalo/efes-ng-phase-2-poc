@@ -6,6 +6,17 @@
       <excludeFolder url="file://$MODULE_DIR$/scratch" />
       <excludeFolder url="file://$MODULE_DIR$/temp" />
       <excludeFolder url="file://$MODULE_DIR$/tmp" />
+      <excludeFolder url="file://$MODULE_DIR$/.efes-build" />
+      <excludeFolder url="file://$MODULE_DIR$/.efes-cache" />
+      <excludeFolder url="file://$MODULE_DIR$/.profile-temp" />
+      <excludeFolder url="file://$MODULE_DIR$/project/build/en/search" />
+      <excludeFolder url="file://$MODULE_DIR$/project/build/search-data" />
+      <excludeFolder url="file://$MODULE_DIR$/project/index-data/flexsearch" />
+      <excludeFolder url="file://$MODULE_DIR$/project2/.efes-build" />
+      <excludeFolder url="file://$MODULE_DIR$/project2/.efes-cache" />
+      <excludeFolder url="file://$MODULE_DIR$/project2/dest" />
+      <excludeFolder url="file://$MODULE_DIR$/project2/preprocessed" />
+      <excludeFolder url="file://$MODULE_DIR$/test/cache-integration/.test-temp" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

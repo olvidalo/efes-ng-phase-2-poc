@@ -1,7 +1,8 @@
 import {type Input, type PipelineContext, PipelineNode, type PipelineNodeConfig} from "../../core/pipeline";
 import path from "node:path";
-import {fork} from "child_process";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
+import { fileURLToPath } from "node:url";
 
 // @ts-ignore
 import {getResource, XPath} from 'saxonjs-he';
@@ -65,60 +66,35 @@ export class CompileStylesheetNode extends PipelineNode<CompileStylesheetConfig,
             async (item) => {
                 const outputPath = this.getCompiledPath(item, context);
 
-                context.log(`Compiling ${item} to ${outputPath}`);
+                this.log(context, `Compiling ${item} to ${outputPath}`);
 
                 // Extract XSLT dependencies before compilation
                 const discoveredDependencies = await this.extractXsltDependencies(item);
-                context.log(`  Found ${discoveredDependencies.length} dependencies: ${JSON.stringify(discoveredDependencies)}`);
+                this.log(context, `Found ${discoveredDependencies.length} dependencies: ${JSON.stringify(discoveredDependencies)}`);
 
                 try {
-                    await new Promise<void>((resolve, reject) => {
-                        const xslt3Path = require.resolve('xslt3-he');
+                    // Determine workload script path based on environment
+                    const currentDir = path.dirname(fileURLToPath(import.meta.url));
+                    const devWorkloadPath = path.resolve(currentDir, '../compileWorkload.ts');
+                    const prodWorkloadPath = path.resolve(currentDir, 'xml/compileWorkload.js');
+                    const workloadScript = fsSync.existsSync(prodWorkloadPath) ? prodWorkloadPath : devWorkloadPath;
 
-                        const child = fork(xslt3Path, [
-                            `-xsl:${item}`,
-                            `-export:${outputPath}`,
-                            // TODO: find out whether we should rather produce relocatable stylesheets
-                            //       and have the user provide the base URI in the xslt transform node configuration
-                            // '-relocate:on',
-                            `-stublib:${path.resolve('kiln-functions-stub.json')}`,  // Register extension function signatures
-                            '-nogo'
-                        ], {
-                            silent: true // Capture stdio
-                        });
-
-                        let stdout = '';
-                        let stderr = '';
-
-                        if (child.stdout) {
-                            child.stdout.on('data', (data) => {
-                                stdout += data.toString();
-                            });
-                        }
-
-                        if (child.stderr) {
-                            child.stderr.on('data', (data) => {
-                                stderr += data.toString();
-                            });
-                        }
-
-                        child.on('close', (code) => {
-                            if (code === 0) {
-                                console.log(`Successfully compiled: ${path.basename(outputPath)}`);
-                                resolve();
-                            } else {
-                                reject(new Error(`XSLT compilation failed with exit code ${code}\nstderr: ${stderr}`));
-                            }
-                        });
-
-                        child.on('error', (err) => {
-                            reject(new Error(`Failed to fork xslt3 process: ${err.message}`));
-                        });
+                    // Execute compilation in worker thread
+                    const result = await context.workerPool.execute<{
+                        outputPath: string;
+                    }>({
+                        workloadScript,
+                        nodeName: this.name,
+                        xsltPath: item,
+                        outputPath,
+                        stubLibPath: path.resolve('kiln-functions-stub.json')
                     });
+
+                    this.log(context, `Compiled: ${result.outputPath}`);
 
                     return {
                         outputs: {
-                            compiledStylesheet: [outputPath]
+                            compiledStylesheet: [result.outputPath]
                         },
                         discoveredDependencies
                     };

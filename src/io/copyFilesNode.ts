@@ -32,7 +32,7 @@ export class CopyFilesNode extends PipelineNode<CopyFilesConfig, "copied"> {
             if (!this.config.outputConfig.overwrite) {
                 try {
                     await access(destPath, constants.F_OK)
-                    context.log(`Skipped: ${sourcePath} → ${destPath}`);
+                    this.log(context, `Skipped: ${sourcePath} → ${destPath}`);
                     continue;
                 } catch (error: any) {
                     if (error?.code === 'ENOENT') {
@@ -48,7 +48,7 @@ export class CopyFilesNode extends PipelineNode<CopyFilesConfig, "copied"> {
                 copiedFiles.push(destPath);
             }
 
-            context.log(`Copied: ${sourcePath} → ${destPath}`);
+            this.log(context, `Copied: ${sourcePath} → ${destPath}`);
         }
 
         return [{ copied: copiedFiles }];

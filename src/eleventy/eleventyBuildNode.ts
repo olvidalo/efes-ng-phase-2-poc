@@ -41,7 +41,7 @@ export class EleventyBuildNode extends PipelineNode<EleventyBuildConfig, "built"
             path.resolve(this.config.outputConfig.outputDir) :
             context.getBuildPath(this.name, sourceDir);
 
-        context.log(`Building Eleventy site: ${sourceDir} -> ${outputDir}`);
+        this.log(context, `Building Eleventy site: ${sourceDir} -> ${outputDir}`);
 
         // For now, don't use caching since we're dealing with directories
         // TODO: Implement proper directory-based caching
@@ -58,7 +58,7 @@ export class EleventyBuildNode extends PipelineNode<EleventyBuildConfig, "built"
         // Run the build
         await elev.write();
 
-        context.log(`  - Eleventy build completed: ${outputDir}`);
+        this.log(context, `Eleventy build completed: ${outputDir}`);
 
         const results = [{ item: sourceDir, output: outputDir, cached: false }];
 

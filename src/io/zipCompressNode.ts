@@ -59,7 +59,7 @@ export class ZipCompressNode extends PipelineNode<ZipCompressConfig, "zip"> {
                         ? path.relative(this.config.outputConfig.base, filePath)
                         : filePath;
 
-                    context.log(`  - Adding: ${entryName}`);
+                    this.log(context, `Adding: ${entryName}`);
 
                     const file = new ZipPassThrough(entryName);
                     zip.add(file);
@@ -76,7 +76,7 @@ export class ZipCompressNode extends PipelineNode<ZipCompressConfig, "zip"> {
                 zip.end();
                 await finished;
 
-                context.log(`Created: ${zipPath} (${inputPaths.length} files)`);
+                this.log(context, `Created: ${zipPath} (${inputPaths.length} files)`);
 
                 return { outputs: { zip: [zipPath] } };
             }

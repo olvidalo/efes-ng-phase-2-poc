@@ -22,13 +22,13 @@ export class FlexSearchIndexNode extends PipelineNode<FlexSearchIndexConfig, "se
         const jsonFile = jsonFiles[0];
         const outputDir = this.config.outputConfig?.outputDir || context.getBuildPath(this.name, jsonFile);
 
-        context.log(`Generating FlexSearch index from ${jsonFile}`);
+        this.log(context, `Generating FlexSearch index from ${jsonFile}`);
 
         // Load documents
         const jsonContent = await fs.readFile(jsonFile, 'utf-8');
         const documents = JSON.parse(jsonContent);
 
-        context.log(`  - Processing ${documents.length} documents`);
+        this.log(context, `Processing ${documents.length} documents`);
 
         // Create FlexSearch index (text search + document storage)
         const indexConfig = {
@@ -70,7 +70,7 @@ export class FlexSearchIndexNode extends PipelineNode<FlexSearchIndexConfig, "se
         });
         await fs.writeFile(path.join(outputDir, 'index.json'), JSON.stringify(writtenFiles, null, 2));
 
-        context.log(`  - FlexSearch index generated: ${outputDir}`);
+        this.log(context, `FlexSearch index generated: ${outputDir}`);
         return [{ searchIndex: [outputDir] }];
     }
 

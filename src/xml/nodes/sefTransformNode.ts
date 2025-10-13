@@ -81,7 +81,7 @@ export class SefTransformNode extends PipelineNode<SefTransformConfig, "transfor
             [sefStylesheetPath];
 
         const isNoSourceMode = !this.items;
-        context.log(`${isNoSourceMode ? 'Running stylesheet' : `Transforming ${sourcePaths.length} file(s)`} with ${sefStylesheetPath}`);
+        this.log(context, `${isNoSourceMode ? 'Running stylesheet' : `Transforming ${sourcePaths.length} file(s)`} with ${sefStylesheetPath}`);
 
         const results = await this.withCache<"transformed" | "result-documents">(
             context,
@@ -132,7 +132,7 @@ export class SefTransformNode extends PipelineNode<SefTransformConfig, "transfor
                 // Determine workload script path based on environment
                 const currentDir = path.dirname(fileURLToPath(import.meta.url));
                 const devWorkloadPath = path.resolve(currentDir, '../saxonWorkload.ts');
-                const prodWorkloadPath = path.resolve(currentDir, 'saxonWorkload.js');
+                const prodWorkloadPath = path.resolve(currentDir, 'xml/saxonWorkload.js');
                 const workloadScript = fs.existsSync(prodWorkloadPath) ? prodWorkloadPath : devWorkloadPath;
 
                 const result = await context.workerPool.execute<{
@@ -140,6 +140,7 @@ export class SefTransformNode extends PipelineNode<SefTransformConfig, "transfor
                     resultDocumentPaths: string[];
                 }>({
                     workloadScript,
+                    nodeName: this.name,
                     sourcePath: isNoSourceMode ? null : sourcePath,
                     sefStylesheetPath,
                     stylesheetInternal: sefStylesheet,
@@ -148,9 +149,9 @@ export class SefTransformNode extends PipelineNode<SefTransformConfig, "transfor
                     transformOptions
                 });
 
-                context.log(`  - Generated: ${result.outputPath}`);
+                this.log(context, `Generated: ${result.outputPath}`);
                 for (const docPath of result.resultDocumentPaths) {
-                    context.log(`  - Result document: ${docPath}`);
+                    this.log(context, `Result document: ${docPath}`);
                 }
 
                 return {

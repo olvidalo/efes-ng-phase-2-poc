@@ -52,6 +52,7 @@ SaxonJS.registerExtensionFunctions({
 const platform = SaxonJS.internals.getPlatform();
 
 export interface TransformJob {
+    nodeName: string;
     sourcePath: string | null;  // null for no-source transforms
     sefStylesheetPath: string;
     stylesheetInternal: any
