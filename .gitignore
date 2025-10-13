@@ -10,3 +10,13 @@ CLAUDE.md
 .efes-cache
 .efes-build
 test/**/.test-temp
+.profile-temp/
+
+project/build
+project/index-data
+project/processed-stylesheets
+project/site-source
+project/build
+
+project2/dest
+project2/preprocessed
