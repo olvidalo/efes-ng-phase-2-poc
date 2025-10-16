@@ -4,7 +4,8 @@ import {
     inputIsNodeOutputReference,
     type PipelineContext,
     PipelineNode,
-    type PipelineNodeConfig
+    type PipelineNodeConfig,
+    type UnifiedOutputConfig
 } from "../../core/pipeline";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
@@ -21,64 +22,50 @@ interface SefTransformConfig extends PipelineNodeConfig {
         serializationParams?: Record<string, any>;
         initialMode?: string;
     };
-    outputConfig?: {
-        outputDir?: string;
-        outputFilenameMapping?: (inputPath: string) => string;
-        resultDocumentsDir?: string;
-        resultExtension?: string;
-    };
+    outputConfig?: UnifiedOutputConfig;
 }
 
 
 export class SefTransformNode extends PipelineNode<SefTransformConfig, "transformed" | "result-documents"> {
 
-    // Helper: Calculate transformed output path (DRY - reused in getOutputPath and performWork)
+    // Helper: Calculate transformed output path using unified path handling
     private getTransformedPath(item: string, context: PipelineContext): string {
-        // If explicit outputDir specified, all paths are relative to it
-        if (this.config.outputConfig?.outputDir) {
-            const outputDir = this.config.outputConfig.outputDir;
-
-            // Custom mapping returns path relative to outputDir
-            if (this.config.outputConfig.outputFilenameMapping) {
-                const relativePath = this.config.outputConfig.outputFilenameMapping(item);
-                return path.join(outputDir, relativePath);
-            }
-
-            // Default: preserve relative path structure from source (strip build prefix)
-            const extension = this.config.outputConfig?.resultExtension ?? '.xml';
-            const basename = path.basename(item, path.extname(item));
-            const relativePath = this.getCleanRelativePath(item, context);
-            return path.join(outputDir, relativePath, basename + extension);
-        }
-
-        // No outputDir: use default build directory logic via getBuildPath
-        if (this.config.outputConfig?.outputFilenameMapping) {
-            const strippedItem = context.stripBuildPrefix(item);
-            const relativePath = this.config.outputConfig.outputFilenameMapping(strippedItem);
-            return path.join(context.buildDir, this.name, relativePath);
-        }
-
-        const extension = this.config.outputConfig?.resultExtension ?? '.xml';
-        return context.getBuildPath(this.name, item, extension);
+        const config = this.config.outputConfig ?? {};
+        // Default extension is .xml for transforms (XSLT standard)
+        const defaultExt = config.extension ?? '.xml';
+        return this.calculateOutputPath(item, context, config, defaultExt);
     }
 
     async run(context: PipelineContext) {
+        // const startTime = Date.now();
+
         // Handle both FileRef and Input (NodeOutputReference) for sefStylesheet
+        // this.log(context, `[DEBUG] Resolving SEF stylesheet reference...`);
+        // const resolveStartTime = Date.now();
         const sefStylesheetPath = (this.config.config.sefStylesheet as any).path
             ? (this.config.config.sefStylesheet as FileRef).path
             : (await context.resolveInput(this.config.config.sefStylesheet as Input))[0];
+        // this.log(context, `[DEBUG] SEF stylesheet resolved in ${Date.now() - resolveStartTime}ms: ${sefStylesheetPath}`);
 
+        // this.log(context, `[DEBUG] Loading SEF stylesheet JSON...`);
+        // const loadStartTime = Date.now();
         const sefStylesheetJson = await readFile(sefStylesheetPath, 'utf-8')
         const sefStylesheet = JSON.parse(sefStylesheetJson)
+        // this.log(context, `[DEBUG] SEF stylesheet loaded in ${Date.now() - loadStartTime}ms`);
 
         // Handle no-source mode (stylesheet uses document() for input)
+        // this.log(context, `[DEBUG] Resolving input items...`);
+        // const itemsStartTime = Date.now();
         const sourcePaths = this.items ?
             await context.resolveInput(this.items) :
             [sefStylesheetPath];
+        // this.log(context, `[DEBUG] Input items resolved in ${Date.now() - itemsStartTime}ms: ${sourcePaths.length} file(s)`);
 
         const isNoSourceMode = !this.items;
-        this.log(context, `${isNoSourceMode ? 'Running stylesheet' : `Transforming ${sourcePaths.length} file(s)`} with ${sefStylesheetPath}`);
+        // this.log(context, `${isNoSourceMode ? 'Running stylesheet' : `Transforming ${sourcePaths.length} file(s)`} with ${sefStylesheetPath}`);
 
+        // this.log(context, `[DEBUG] Starting withCache processing...`);
+        // const cacheStartTime = Date.now();
         const results = await this.withCache<"transformed" | "result-documents">(
             context,
             sourcePaths,
@@ -113,13 +100,21 @@ export class SefTransformNode extends PipelineNode<SefTransformConfig, "transfor
                 throw new Error(`Unknown output key: ${outputKey}`);
             },
             async (sourcePath) => {
+                // this.log(context, `[DEBUG] Transforming item: ${sourcePath}`);
+                // const itemStartTime = Date.now();
+
                 const outputPath = this.getTransformedPath(sourcePath, context);
                 const baseDir = path.dirname(outputPath);
+
+                // this.log(context, `[DEBUG] Resolving stylesheet params...`);
+                // const paramsStartTime = Date.now();
+                const stylesheetParams = await this.resolveStylesheetParams(context, sourcePath);
+                // this.log(context, `[DEBUG] Stylesheet params resolved in ${Date.now() - paramsStartTime}ms`);
 
                 // Prepare transform options for worker (no callbacks - they're in the worker)
                 const transformOptions = {
                     initialTemplate: this.config.config.initialTemplate,
-                    stylesheetParams: await this.resolveStylesheetParams(context, sourcePath),
+                    stylesheetParams,
                     initialMode: this.config.config.initialMode,
                     outputProperties: this.config.config.serializationParams
                 };
@@ -131,6 +126,8 @@ export class SefTransformNode extends PipelineNode<SefTransformConfig, "transfor
                 const prodWorkloadPath = path.resolve(currentDir, 'xml/saxonWorkload.js');
                 const workloadScript = fs.existsSync(prodWorkloadPath) ? prodWorkloadPath : devWorkloadPath;
 
+                // this.log(context, `[DEBUG] Executing transform in worker thread...`);
+                // const workerStartTime = Date.now();
                 const result = await context.workerPool.execute<{
                     outputPath: string;
                     resultDocumentPaths: string[];
@@ -144,11 +141,14 @@ export class SefTransformNode extends PipelineNode<SefTransformConfig, "transfor
                     baseDir,
                     transformOptions
                 });
+                // this.log(context, `[DEBUG] Transform completed in ${Date.now() - workerStartTime}ms`);
 
                 this.log(context, `Generated: ${result.outputPath}`);
                 for (const docPath of result.resultDocumentPaths) {
                     this.log(context, `Result document: ${docPath}`);
                 }
+
+                // this.log(context, `[DEBUG] Item transformation total time: ${Date.now() - itemStartTime}ms`);
 
                 return {
                     outputs: {
@@ -158,6 +158,8 @@ export class SefTransformNode extends PipelineNode<SefTransformConfig, "transfor
                 };
             }
         );
+        // this.log(context, `[DEBUG] withCache processing completed in ${Date.now() - cacheStartTime}ms`);
+        // this.log(context, `[DEBUG] Total run() time: ${Date.now() - startTime}ms`);
 
         return results.map(r => r.outputs);
     }

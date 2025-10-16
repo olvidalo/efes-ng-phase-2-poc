@@ -1,4 +1,4 @@
-import {from, type Input, type PipelineNodeConfig, type FileRef} from "../../core/pipeline";
+import {from, type Input, type PipelineNodeConfig, type FileRef, type UnifiedOutputConfig} from "../../core/pipeline";
 import {CompositeNode} from "../../core/compositeNode";
 import {CompileStylesheetNode} from "./compileStylesheetNode";
 import {SefTransformNode} from "./sefTransformNode";
@@ -12,15 +12,10 @@ interface XsltTransformConfig extends PipelineNodeConfig {
         serializationParams?: Record<string, any>;
         initialMode?: string;
     };
-    outputConfig?: {
-        outputFilenameMapping?: (inputPath: string) => string;
-        outputDir?: string;
-        resultDocumentsDir?: string;
-        resultExtension?: string;
-    };
+    outputConfig?: UnifiedOutputConfig;
 }
 
-export class XsltTransformNode extends CompositeNode<XsltTransformConfig, "transformed" | "result-documents"> {
+export class XsltTransformNode extends CompositeNode<XsltTransformConfig, "transformed" | "result-documents" | "compiledStylesheet"> {
     protected buildInternalNodes(): void {
         const compileName = `${this.name}:compile`;
         const transformName = `${this.name}:transform`;
@@ -44,13 +39,7 @@ export class XsltTransformNode extends CompositeNode<XsltTransformConfig, "trans
                 serializationParams: this.config.config.serializationParams,
                 initialMode: this.config.config.initialMode,
             },
-            outputConfig: {
-                outputFilenameMapping: this.config.outputConfig?.outputFilenameMapping,
-                resultDocumentsDir: this.config.outputConfig?.resultDocumentsDir,
-                resultExtension: this.config.outputConfig?.resultExtension,
-                outputDir: this.config.outputConfig?.outputDir,
-
-            },
+            outputConfig: this.config.outputConfig,
         })
 
         this.internalNodes = [compile, transform]
@@ -58,6 +47,7 @@ export class XsltTransformNode extends CompositeNode<XsltTransformConfig, "trans
         this.outputMappings = {
             "transformed": { node: transform.name, output: "transformed"},
             "result-documents": { node: transform.name, output: "result-documents"},
+            "compiledStylesheet": { node: compile.name, output: "compiledStylesheet"},
         }
     }
 }

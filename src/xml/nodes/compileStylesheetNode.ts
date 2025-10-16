@@ -1,4 +1,4 @@
-import {type Input, type PipelineContext, PipelineNode, type PipelineNodeConfig} from "../../core/pipeline";
+import {type Input, type PipelineContext, PipelineNode, type PipelineNodeConfig, type UnifiedOutputConfig} from "../../core/pipeline";
 import path from "node:path";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
@@ -11,44 +11,15 @@ import {getResource, XPath} from 'saxonjs-he';
 interface CompileStylesheetConfig extends PipelineNodeConfig {
     items: Input;  // xslt files to compile
     config: Record<string, any>;  // No processing config needed
-    outputConfig?: {
-        outputDir?: string;
-        outputFilename?: string;
-        outputFilenameMapping?: (inputPath: string) => string;
-    };
+    outputConfig?: UnifiedOutputConfig;
 }
 
-// TODO: need to preserve the original path somehow, maybe
 export class CompileStylesheetNode extends PipelineNode<CompileStylesheetConfig, "compiledStylesheet"> {
 
-    // Helper: Calculate compiled output path
+    // Helper: Calculate compiled output path using unified path handling
     private getCompiledPath(item: string, context: PipelineContext): string {
-        // If explicit outputDir specified, all paths are relative to it
-        if (this.config.outputConfig?.outputDir) {
-            const outputDir = this.config.outputConfig.outputDir;
-
-            if (this.config.outputConfig.outputFilenameMapping) {
-                const relativePath = this.config.outputConfig.outputFilenameMapping(item);
-                return path.join(outputDir, relativePath);
-            }
-
-            // Custom filename is relative to outputDir
-            if (this.config.outputConfig.outputFilename) {
-                return path.join(outputDir, this.config.outputConfig.outputFilename);
-            }
-
-            // Default: preserve relative path structure from source (strip build prefix)
-            const basename = path.basename(item, path.extname(item));
-            const relativePath = this.getCleanRelativePath(item, context);
-            return path.join(outputDir, relativePath, basename + '.sef.json');
-        }
-
-        // No outputDir: use default build directory logic via getBuildPath
-        if (this.config.outputConfig?.outputFilename) {
-            return path.join(context.buildDir, this.name, this.config.outputConfig.outputFilename);
-        }
-
-        return context.getBuildPath(this.name, item, '.sef.json');
+        const config = this.config.outputConfig ?? {};
+        return this.calculateOutputPath(item, context, config, '.sef.json');
     }
 
     async run(context: PipelineContext) {

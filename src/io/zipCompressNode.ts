@@ -1,4 +1,4 @@
-import {type PipelineNodeConfig, PipelineNode, type PipelineContext, type Input} from "../core/pipeline";
+import {type PipelineNodeConfig, PipelineNode, type PipelineContext, type Input, type UnifiedOutputConfig} from "../core/pipeline";
 import {Zip, ZipPassThrough} from "fflate";
 import {createReadStream, createWriteStream} from "node:fs";
 import {mkdir} from "node:fs/promises";
@@ -6,16 +6,17 @@ import path from "node:path";
 
 interface ZipCompressConfig extends PipelineNodeConfig {
     items: Input;
-    outputConfig: {
-        filename: string;  // Output zip filename (e.g., "inscriptions.zip")
-        outputDir?: string; // Optional output directory
-        base?: string;      // Base path to strip from zip entries
-    };
+    outputConfig: UnifiedOutputConfig;
 }
 
 export class ZipCompressNode extends PipelineNode<ZipCompressConfig, "zip"> {
     async run(context: PipelineContext) {
         const inputPaths = await context.resolveInput(this.items!);
+
+        // Validate that outputFilename is specified
+        if (!this.config.outputConfig?.outputFilename) {
+            throw new Error(`ZipCompressNode "${this.name}" requires outputConfig.outputFilename to be specified`);
+        }
 
         // Treat all inputs as a single "item" for caching - we create ONE zip from MANY files
         // The actual dependency tracking happens via inputPaths being read during cache validation
@@ -25,16 +26,20 @@ export class ZipCompressNode extends PipelineNode<ZipCompressConfig, "zip"> {
             context,
             [allInputsKey],  // Single dummy item to trigger one execution
             (item) => `zip-all-${inputPaths.length}-files`,
-            () => this.config.outputConfig.outputDir ?? path.join(context.buildDir, this.name),
+            () => this.config.outputConfig?.outputDir ?? path.join(context.buildDir, this.name),
             (item, outputKey) => {
-                const outputDir = this.config.outputConfig.outputDir ?? path.join(context.buildDir, this.name);
-                return path.join(outputDir, this.config.outputConfig.filename);
+                const outputDir = this.config.outputConfig?.outputDir ?? path.join(context.buildDir, this.name);
+                const filename = typeof this.config.outputConfig!.outputFilename === 'function'
+                    ? this.config.outputConfig!.outputFilename(item)
+                    : this.config.outputConfig!.outputFilename!;
+                return path.join(outputDir, filename);
             },
             async (item) => {
-                const zipPath = path.join(
-                    this.config.outputConfig.outputDir ?? path.join(context.buildDir, this.name),
-                    this.config.outputConfig.filename
-                );
+                const outputDir = this.config.outputConfig?.outputDir ?? path.join(context.buildDir, this.name);
+                const filename = typeof this.config.outputConfig!.outputFilename === 'function'
+                    ? this.config.outputConfig!.outputFilename(item)
+                    : this.config.outputConfig!.outputFilename!;
+                const zipPath = path.join(outputDir, filename);
 
                 await mkdir(path.dirname(zipPath), {recursive: true});
 
@@ -53,11 +58,16 @@ export class ZipCompressNode extends PipelineNode<ZipCompressConfig, "zip"> {
                     };
                 });
 
-                // Add each file
+                // Add each file - use unified path handling for entry names
                 for (const filePath of inputPaths) {
-                    const entryName = this.config.outputConfig.base
-                        ? path.relative(this.config.outputConfig.base, filePath)
-                        : filePath;
+                    // Use unified config for entry path calculation (but no extension change)
+                    const entryConfig = {
+                        ...this.config.outputConfig,
+                        outputDir: undefined,  // Don't add outputDir to entry paths
+                        outputFilename: undefined  // Don't override filename
+                    };
+                    const entryPath = this.calculateOutputPath(filePath, context, entryConfig, undefined);
+                    const entryName = entryPath;
 
                     this.log(context, `Adding: ${entryName}`);
 

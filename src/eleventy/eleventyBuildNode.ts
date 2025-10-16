@@ -1,4 +1,4 @@
-import {type Input, type PipelineContext, PipelineNode, type PipelineNodeConfig} from "../core/pipeline";
+import {type Input, type PipelineContext, PipelineNode, type PipelineNodeConfig, type UnifiedOutputConfig} from "../core/pipeline";
 import path from "node:path";
 import fs from "node:fs/promises";
 
@@ -11,9 +11,7 @@ interface EleventyBuildConfig extends PipelineNodeConfig {
         sourceDir: string;
         eleventyConfig?: any;
     };
-    outputConfig?: {
-        outputDir?: string;
-    };
+    outputConfig?: UnifiedOutputConfig;
 }
 
 export class EleventyBuildNode extends PipelineNode<EleventyBuildConfig, "built"> {

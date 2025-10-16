@@ -1,13 +1,10 @@
-import {type PipelineNodeConfig, PipelineNode, type PipelineContext, type Input} from "../core/pipeline";
+import {type PipelineNodeConfig, PipelineNode, type PipelineContext, type Input, type UnifiedOutputConfig} from "../core/pipeline";
 import {copyFile, mkdir, stat, access, constants} from "node:fs/promises";
 import path from "node:path";
 
 interface CopyFilesConfig extends PipelineNodeConfig {
     items: Input;
-    outputConfig: {
-        destinationDir: string;
-        base?: string;
-        // Default: false
+    outputConfig: UnifiedOutputConfig & {
         overwrite?: boolean;
     };
 }
@@ -17,14 +14,14 @@ export class CopyFilesNode extends PipelineNode<CopyFilesConfig, "copied"> {
         const paths = await context.resolveInput(this.items!);
         const copiedFiles: string[] = [];
 
-        for (const sourcePath of paths) {
-            //if this.config.outputConfig.base is set, then we need to resolve the sourcePath (only for destPath)
-            const sourcePathWithBase =
-                this.config.outputConfig.base
-                    ? path.relative(this.config.outputConfig.base, sourcePath)
-                    : sourcePath;
+        // Validate that outputDir is specified
+        if (!this.config.outputConfig?.outputDir) {
+            throw new Error(`CopyFilesNode "${this.name}" requires outputConfig.outputDir to be specified`);
+        }
 
-            const destPath = path.join(this.config.outputConfig.destinationDir, sourcePathWithBase);
+        for (const sourcePath of paths) {
+            // Use unified path calculation
+            const destPath = this.calculateOutputPath(sourcePath, context, this.config.outputConfig, undefined);
 
             // Ensure destination directory exists
             await mkdir(path.dirname(destPath), { recursive: true });
@@ -32,7 +29,9 @@ export class CopyFilesNode extends PipelineNode<CopyFilesConfig, "copied"> {
             if (!this.config.outputConfig.overwrite) {
                 try {
                     await access(destPath, constants.F_OK)
-                    this.log(context, `Skipped: ${sourcePath} → ${destPath}`);
+                    // File already exists, skip but add to list of copied files for resolving outputs
+                    // this.log(context, `Skipped: ${sourcePath} → ${destPath}`);
+                    copiedFiles.push(destPath);
                     continue;
                 } catch (error: any) {
                     if (error?.code === 'ENOENT') {

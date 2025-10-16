@@ -1,15 +1,17 @@
-import {type Input, type PipelineContext, PipelineNode, type PipelineNodeConfig} from "../core/pipeline";
+import {type Input, type PipelineContext, PipelineNode, type PipelineNodeConfig, type UnifiedOutputConfig} from "../core/pipeline";
 import path from "node:path";
 import fs from "node:fs/promises";
 
-import FlexSearch from 'flexsearch';
+import FlexSearch, {type DocumentData, type IndexOptions} from 'flexsearch';
 
 interface FlexSearchIndexConfig extends PipelineNodeConfig {
     items: Input;  // documentsJson files
-    config: Record<string, any>;  // No processing config needed
-    outputConfig?: {
-        outputDir?: string;
-    };
+    config: {
+        idField: string,
+        textFields: string[],
+        facetFields: string[]
+    }
+    outputConfig?: UnifiedOutputConfig;
 }
 
 export class FlexSearchIndexNode extends PipelineNode<FlexSearchIndexConfig, "searchIndex"> {
@@ -30,18 +32,12 @@ export class FlexSearchIndexNode extends PipelineNode<FlexSearchIndexConfig, "se
 
         this.log(context, `Processing ${documents.length} documents`);
 
-        // Create FlexSearch index (text search + document storage)
         const indexConfig = {
-            id: 'num_id',
-            store: true,  // Store full documents for .get() retrieval
-            // TODO make configurable!
-            index: [
-                'text', 'lemmatised_text'
-            ],
-            tag: [ 'document_title',
-                'found_provenance', 'source_repository', 'support_material',
-                'support_object_type', 'text_type', 'language', 'origin_date']
-        };
+            id: this.config.config.idField,
+            store: true,
+            index: this.config.config.textFields,
+            tag: this.config.config.facetFields,
+        }
         const searchIndex = new FlexSearch.Document(indexConfig);
 
         // Add documents to index
@@ -83,11 +79,7 @@ export class FlexSearchIndexNode extends PipelineNode<FlexSearchIndexConfig, "se
     private generateFacets(documents: any[]): Record<string, Record<string, number>> {
         const facets: Record<string, Record<string, number>> = {};
 
-        // TODO: make facet fields configurable
-        const facetFields = ['support_material', 'support_object_type', 'found_provenance',
-                            'source_repository', 'text_type', 'language', 'origin_date_evidence'];
-
-        facetFields.forEach(field => {
+        this.config.config.facetFields?.forEach(field => {
             facets[field] = {};
             documents.forEach(doc => {
                 const values = Array.isArray(doc[field]) ? doc[field] : [doc[field]];

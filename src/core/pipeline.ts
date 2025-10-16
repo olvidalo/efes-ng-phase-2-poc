@@ -36,6 +36,34 @@ export function fileRef(path: string): FileRef {
     return { type: 'file', path };
 }
 
+/**
+ * Unified output configuration for all node types.
+ * Provides smart defaults and escape hatches for common path manipulation patterns.
+ */
+export interface UnifiedOutputConfig {
+    // LOCATION: Where files go
+    /** Output directory. Default: buildDir/nodeName */
+    outputDir?: string;
+
+    // STRUCTURE: Path manipulation (evaluated in order, pick one)
+    /** Flatten to just basename (filename with extension) */
+    flattenToBasename?: boolean;
+    /** Strip this prefix from the path */
+    stripPathPrefix?: string;
+    /** Full custom path transformation (receives clean path after build prefix stripped) */
+    pathMapping?: (cleanPath: string) => string;
+    // Default: preserve full path
+
+    // NAMING: Filename changes
+    /** Override entire output filename (string or function) */
+    outputFilename?: string | ((inputPath: string) => string);
+    /** Change file extension (e.g., '.html', '.json') */
+    extension?: string;
+    /** Add suffix before extension (e.g., '-processed') */
+    filenameSuffix?: string;
+    // Default: preserve original filename (or change ext for transforms)
+}
+
 export interface PipelineNodeConfig {
     name: string;
     // 0-1 variable input (what to process)
@@ -84,11 +112,86 @@ export abstract class PipelineNode<TConfig extends PipelineNodeConfig = Pipeline
     /**
      * Helper: Get relative path from item, stripping build prefixes if present.
      * Used for outputDir-based path calculation.
+     * @deprecated Use calculateOutputPath instead
      */
     protected getCleanRelativePath(item: string, context: PipelineContext): string {
         const itemDir = path.dirname(item);
         const cleanDir = context.stripBuildPrefix(itemDir);
         return path.relative(process.cwd(), cleanDir);
+    }
+
+    /**
+     * Calculate output path for a given input path using unified config.
+     * Handles build prefix stripping, path manipulation, and filename changes.
+     *
+     * @param inputPath - Input file path
+     * @param context - Pipeline context
+     * @param outputConfig - Unified output configuration
+     * @param defaultExtension - Default extension for this node type (optional)
+     * @returns Final output path
+     */
+    protected calculateOutputPath(
+        inputPath: string,
+        context: PipelineContext,
+        outputConfig: UnifiedOutputConfig,
+        defaultExtension?: string
+    ): string {
+        // Step 1: Strip build prefix to get clean path
+        const cleanPath = context.stripBuildPrefix(inputPath);
+
+        // Step 2: Apply path structure manipulation
+        let processedPath: string;
+
+        if (outputConfig.flattenToBasename) {
+            // Just basename (filename with extension)
+            processedPath = path.basename(cleanPath);
+        } else if (outputConfig.stripPathPrefix) {
+            // Strip specific prefix from path
+            const prefix = outputConfig.stripPathPrefix;
+            const normalizedClean = cleanPath.split(path.sep).join('/');
+            const normalizedPrefix = prefix.split(path.sep).join('/');
+
+            if (normalizedClean.startsWith(normalizedPrefix)) {
+                const stripped = normalizedClean.substring(normalizedPrefix.length);
+                processedPath = stripped.startsWith('/') ? stripped.substring(1) : stripped;
+            } else {
+                processedPath = cleanPath;
+            }
+        } else if (outputConfig.pathMapping) {
+            // Custom path transformation
+            processedPath = outputConfig.pathMapping(cleanPath);
+        } else {
+            // Default: preserve full path
+            processedPath = cleanPath;
+        }
+
+        // Step 3: Apply filename changes
+        let finalFilename: string;
+
+        if (outputConfig.outputFilename) {
+            // Override entire filename
+            if (typeof outputConfig.outputFilename === 'function') {
+                finalFilename = outputConfig.outputFilename(inputPath);
+            } else {
+                finalFilename = outputConfig.outputFilename;
+            }
+        } else {
+            // Apply extension and/or suffix changes
+            const dir = path.dirname(processedPath);
+            const basename = path.basename(processedPath);
+            const ext = path.extname(basename);
+            const nameWithoutExt = path.basename(basename, ext);
+
+            const newExt = outputConfig.extension ?? defaultExtension ?? ext;
+            const suffix = outputConfig.filenameSuffix ?? '';
+
+            const newBasename = `${nameWithoutExt}${suffix}${newExt}`;
+            finalFilename = dir === '.' ? newBasename : path.join(dir, newBasename);
+        }
+
+        // Step 4: Combine with output directory
+        const outputDir = outputConfig.outputDir ?? context.getBuildPath(this.name, '');
+        return path.join(outputDir, finalFilename);
     }
 
     /**
@@ -548,26 +651,23 @@ export class Pipeline {
 
                     // Apply glob filtering if specified
                     if (input.glob) {
-                        const filteredOutputs: string[] = [];
-
+                        // Determine glob pattern based on first output location
+                        // (all outputs from a node are in the same location)
                         let globPattern: string;
-
-                        for (const outputPath of outputs) {
-
-                            if (outputPath.startsWith(this.buildDir)) {
-                                // Output is in default build directory - use full path for globbing
-                                globPattern = `${this.buildDir}/*/${input.glob}`
-                            } else {
-                                // Output is in custom location - glob from current root
-                                globPattern = input.glob;
-                            }
-
-                            // Use Node.js glob to find matching files
-                            const matches = await glob(globPattern);
-                            if (matches.includes(outputPath)) {
-                                filteredOutputs.push(outputPath);
-                            }
+                        if (outputs[0]?.startsWith(this.buildDir)) {
+                            // Output is in default build directory - use full path for globbing
+                            globPattern = `${this.buildDir}/*/${input.glob}`
+                        } else {
+                            // Output is in custom location - glob from current root
+                            globPattern = input.glob;
                         }
+
+                        // Run glob ONCE to get all matches
+                        const matches = await glob(globPattern);
+                        const matchSet = new Set(matches);
+
+                        // Filter outputs to only those that match
+                        const filteredOutputs = outputs.filter(outputPath => matchSet.has(outputPath));
 
                         if (filteredOutputs.length === 0) {
                             throw new Error(`No files from node "${input.node.name}" output "${input.name}" match pattern: ${input.glob}.\nOutputs: ${JSON.stringify(outputs, null, 2)}`);
