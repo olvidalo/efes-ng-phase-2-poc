@@ -4,9 +4,9 @@ import {CompileStylesheetNode} from "./compileStylesheetNode";
 import {SefTransformNode} from "./sefTransformNode";
 
 interface XsltTransformConfig extends PipelineNodeConfig {
-    items?: Input;  // sourceXml files (optional for no-source transforms)
     config: {
-        xsltStylesheet: FileRef | Input;
+        sourceFiles?: Input;  // sourceXml files (optional for no-source transforms)
+        stylesheet: FileRef | Input;
         initialTemplate?: string;
         stylesheetParams?: Record<string, any | ((inputPath: string) => any)>;
         serializationParams?: Record<string, any>;
@@ -23,16 +23,17 @@ export class XsltTransformNode extends CompositeNode<XsltTransformConfig, "trans
 
         const compile = new CompileStylesheetNode({
             name: compileName,
-            items: typeof this.config.config.xsltStylesheet === "object" && "path" in this.config.config.xsltStylesheet
-                ? this.config.config.xsltStylesheet.path
-                : this.config.config.xsltStylesheet,
-            config: {},
+            config: {
+                stylesheets: typeof this.config.config.stylesheet === "object" && "path" in this.config.config.stylesheet
+                    ? this.config.config.stylesheet.path
+                    : this.config.config.stylesheet,
+            },
         })
 
         const transform = new SefTransformNode({
             name: transformName,
-            items: this.items,
             config: {
+                sourceFiles: this.config.config.sourceFiles,
                 sefStylesheet: from(compile, "compiledStylesheet"),
                 initialTemplate: this.config.config.initialTemplate,
                 stylesheetParams: this.config.config.stylesheetParams,

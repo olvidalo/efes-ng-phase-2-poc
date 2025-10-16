@@ -9,8 +9,9 @@ import {getResource, XPath} from 'saxonjs-he';
 
 
 interface CompileStylesheetConfig extends PipelineNodeConfig {
-    items: Input;  // xslt files to compile
-    config: Record<string, any>;  // No processing config needed
+    config: {
+        stylesheets: Input;  // xslt files to compile
+    };
     outputConfig?: UnifiedOutputConfig;
 }
 
@@ -23,7 +24,7 @@ export class CompileStylesheetNode extends PipelineNode<CompileStylesheetConfig,
     }
 
     async run(context: PipelineContext) {
-        const xsltPaths = await context.resolveInput(this.items!);
+        const xsltPaths = await context.resolveInput(this.config.config.stylesheets);
 
         const results = await this.withCache<"compiledStylesheet">(
             context,

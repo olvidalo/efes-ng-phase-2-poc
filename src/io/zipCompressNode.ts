@@ -5,13 +5,15 @@ import {mkdir} from "node:fs/promises";
 import path from "node:path";
 
 interface ZipCompressConfig extends PipelineNodeConfig {
-    items: Input;
+    config: {
+        files: Input;
+    };
     outputConfig: UnifiedOutputConfig;
 }
 
 export class ZipCompressNode extends PipelineNode<ZipCompressConfig, "zip"> {
     async run(context: PipelineContext) {
-        const inputPaths = await context.resolveInput(this.items!);
+        const inputPaths = await context.resolveInput(this.config.config.files);
 
         // Validate that outputFilename is specified
         if (!this.config.outputConfig?.outputFilename) {

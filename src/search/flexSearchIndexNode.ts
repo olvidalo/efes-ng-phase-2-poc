@@ -5,18 +5,18 @@ import fs from "node:fs/promises";
 import FlexSearch, {type DocumentData, type IndexOptions} from 'flexsearch';
 
 interface FlexSearchIndexConfig extends PipelineNodeConfig {
-    items: Input;  // documentsJson files
     config: {
-        idField: string,
-        textFields: string[],
-        facetFields: string[]
-    }
+        documents: Input;  // documentsJson files
+        idField: string;
+        textFields: string[];
+        facetFields: string[];
+    };
     outputConfig?: UnifiedOutputConfig;
 }
 
 export class FlexSearchIndexNode extends PipelineNode<FlexSearchIndexConfig, "searchIndex"> {
     async run(context: PipelineContext) {
-        const jsonFiles = await context.resolveInput(this.items!);
+        const jsonFiles = await context.resolveInput(this.config.config.documents);
         if (jsonFiles.length !== 1) {
             throw new Error("FlexSearchIndexNode requires exactly one JSON input file");
         }

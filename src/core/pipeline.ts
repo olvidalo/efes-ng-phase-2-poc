@@ -66,9 +66,7 @@ export interface UnifiedOutputConfig {
 
 export interface PipelineNodeConfig {
     name: string;
-    // 0-1 variable input (what to process)
-    items?: Input;
-    // Processing configuration (may contain FileRef values)
+    // Processing configuration (may contain Input values via FileRef or from())
     config: Record<string, any>;
     // Output settings (excluded from content signature)
     outputConfig?: Record<string, any>;
@@ -82,11 +80,6 @@ export abstract class PipelineNode<TConfig extends PipelineNodeConfig = Pipeline
 
     get name() {
         return this.config.name;
-    }
-
-
-    get items(): Input | undefined {
-        return this.config.items;
     }
 
     /**
@@ -265,22 +258,8 @@ export abstract class PipelineNode<TConfig extends PipelineNodeConfig = Pipeline
             }
         }
 
-        // Include items in the signature for input-dependent processing
-        let itemsSignature = '';
-        if (this.items) {
-            if (typeof this.items === 'string') {
-                itemsSignature = `items:${this.items}`;
-            } else if (Array.isArray(this.items)) {
-                itemsSignature = `items:[${this.items.join(',')}]`;
-            } else {
-                // For NodeOutputReference, use node name, output name, and glob filter if present
-                const globPart = this.items.glob ? `:${this.items.glob}` : '';
-                itemsSignature = `items:from(${this.items.node.name}:${this.items.name}${globPart})`;
-            }
-        }
-
         // Combine all parts, sort for consistency, and hash
-        const combined = [...configParts.sort(), itemsSignature].filter(x => x).join('|');
+        const combined = configParts.sort().join('|');
         const hash = crypto.createHash('sha256').update(combined).digest('hex');
 
         return `${this.constructor.name}-${hash.substring(0, 8)}`;
@@ -323,11 +302,6 @@ export abstract class PipelineNode<TConfig extends PipelineNodeConfig = Pipeline
 
         for (const value of Object.values(this.config.config || {})) {
             await processConfigValue(value);
-        }
-
-        // Also check items field for from() references
-        if (this.items && inputIsNodeOutputReference(this.items)) {
-            upstreamNodes.set(this.items.node.name, this.items);
         }
 
         // Compute upstream output signatures with metadata

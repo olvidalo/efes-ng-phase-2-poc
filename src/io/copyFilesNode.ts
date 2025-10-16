@@ -3,7 +3,9 @@ import {copyFile, mkdir, stat, access, constants} from "node:fs/promises";
 import path from "node:path";
 
 interface CopyFilesConfig extends PipelineNodeConfig {
-    items: Input;
+    config: {
+        sourceFiles: Input;
+    };
     outputConfig: UnifiedOutputConfig & {
         overwrite?: boolean;
     };
@@ -11,7 +13,7 @@ interface CopyFilesConfig extends PipelineNodeConfig {
 
 export class CopyFilesNode extends PipelineNode<CopyFilesConfig, "copied"> {
     async run(context: PipelineContext) {
-        const paths = await context.resolveInput(this.items!);
+        const paths = await context.resolveInput(this.config.config.sourceFiles);
         const copiedFiles: string[] = [];
 
         // Validate that outputDir is specified

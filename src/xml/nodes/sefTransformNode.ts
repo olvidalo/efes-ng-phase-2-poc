@@ -13,8 +13,8 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 interface SefTransformConfig extends PipelineNodeConfig {
-    items?: Input;  // sourceXml files (optional for no-source transforms)
     config: {
+        sourceFiles?: Input;  // sourceXml files (optional for no-source transforms)
         sefStylesheet: FileRef | Input;  // Can be FileRef or NodeOutputReference
         initialTemplate?: string;
         stylesheetParams?: Record<string, any | ((inputPath: string) => any)>;
@@ -56,12 +56,12 @@ export class SefTransformNode extends PipelineNode<SefTransformConfig, "transfor
         // Handle no-source mode (stylesheet uses document() for input)
         // this.log(context, `[DEBUG] Resolving input items...`);
         // const itemsStartTime = Date.now();
-        const sourcePaths = this.items ?
-            await context.resolveInput(this.items) :
+        const sourcePaths = this.config.config.sourceFiles ?
+            await context.resolveInput(this.config.config.sourceFiles) :
             [sefStylesheetPath];
         // this.log(context, `[DEBUG] Input items resolved in ${Date.now() - itemsStartTime}ms: ${sourcePaths.length} file(s)`);
 
-        const isNoSourceMode = !this.items;
+        const isNoSourceMode = !this.config.config.sourceFiles;
         // this.log(context, `${isNoSourceMode ? 'Running stylesheet' : `Transforming ${sourcePaths.length} file(s)`} with ${sefStylesheetPath}`);
 
         // this.log(context, `[DEBUG] Starting withCache processing...`);
