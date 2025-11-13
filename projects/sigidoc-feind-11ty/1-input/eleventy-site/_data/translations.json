@@ -6,7 +6,7 @@
       "headers": {
         "documentId": "Document ID",
         "title": "Title",
-        "findspot": "Findspot",
+        "category": "Category",
         "dating": "Dating",
         "sourceFile": "Source File"
       },
@@ -25,7 +25,7 @@
       "headers": {
         "documentId": "Dokument-ID",
         "title": "Titel",
-        "findspot": "Fundort",
+        "category": "Kategorie",
         "dating": "Datierung",
         "sourceFile": "Quelldatei"
       },
@@ -44,7 +44,7 @@
       "headers": {
         "documentId": "Αναγνωριστικό εγγράφου",
         "title": "Τίτλος",
-        "findspot": "Τόπος ευρέσεως",
+        "category": "κατηγορία",
         "dating": "Χρονολόγηση",
         "sourceFile": "Αρχείο προέλευσης"
       },

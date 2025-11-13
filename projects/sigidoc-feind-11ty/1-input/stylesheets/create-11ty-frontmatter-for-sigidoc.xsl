@@ -34,24 +34,43 @@
     </xsl:variable>
 
     <!-- Generate sortKey for natural sorting (A.1, A.2, ..., A.9, A.10, A.11...) -->
+<!--    <xsl:variable name="sortKey">-->
+<!--        &lt;!&ndash; Use regex to split between letters and numbers &ndash;&gt;-->
+<!--        <xsl:variable name="parts" select="tokenize($filename, '(?&lt;=[a-zA-Z])(?=[0-9])|(?&lt;=[0-9])(?=[a-zA-Z])')"/>-->
+<!--        <xsl:for-each select="$parts">-->
+<!--            <xsl:choose>-->
+<!--                &lt;!&ndash; If part is numeric, pad with zeros to 5 digits &ndash;&gt;-->
+<!--                <xsl:when test=". castable as xs:integer">-->
+<!--                    <xsl:value-of select="format-number(xs:integer(.), '00000')"/>-->
+<!--                </xsl:when>-->
+<!--                &lt;!&ndash; Otherwise keep as-is &ndash;&gt;-->
+<!--                <xsl:otherwise>-->
+<!--                    <xsl:value-of select="."/>-->
+<!--                </xsl:otherwise>-->
+<!--            </xsl:choose>-->
+<!--            &lt;!&ndash; Add dot separator except after last part &ndash;&gt;-->
+<!--            <xsl:if test="position() != last()">-->
+<!--                <xsl:text>.</xsl:text>-->
+<!--            </xsl:if>-->
+<!--        </xsl:for-each>-->
+<!--    </xsl:variable>-->
     <xsl:variable name="sortKey">
-        <xsl:variable name="parts" select="tokenize($filename, '\.')"/>
-        <xsl:for-each select="$parts">
-            <xsl:choose>
-                <!-- If part is numeric, pad with zeros to 5 digits -->
-                <xsl:when test=". castable as xs:integer">
-                    <xsl:value-of select="format-number(xs:integer(.), '00000')"/>
-                </xsl:when>
-                <!-- Otherwise keep as-is -->
-                <xsl:otherwise>
-                    <xsl:value-of select="."/>
-                </xsl:otherwise>
-            </xsl:choose>
-            <!-- Add dot separator except after last part -->
-            <xsl:if test="position() != last()">
+        <xsl:analyze-string select="$filename" regex="([a-zA-Z]+)|([0-9]+)">
+            <xsl:matching-substring>
+                <xsl:choose>
+                    <!-- If it's numeric, pad with zeros to 5 digits -->
+                    <xsl:when test="regex-group(2)">
+                        <xsl:value-of select="format-number(xs:integer(regex-group(2)), '00000')"/>
+                    </xsl:when>
+                    <!-- Otherwise it's alphabetic, keep as-is -->
+                    <xsl:otherwise>
+                        <xsl:value-of select="regex-group(1)"/>
+                    </xsl:otherwise>
+                </xsl:choose>
+                <!-- Add separator except for last part (optional) -->
                 <xsl:text>.</xsl:text>
-            </xsl:if>
-        </xsl:for-each>
+            </xsl:matching-substring>
+        </xsl:analyze-string>
     </xsl:variable>
 
     <!-- Main template - create JSON structure -->
@@ -68,7 +87,7 @@
                 'permalink': concat($language, '/seals/', $filename, '.html'),
                 'tags': 'seals',
                 'sortKey': $sortKey,
-                'findspot': string-join(//tei:placeName[@type='ancientFindspot'], ', '),
+                'category': string-join(//tei:msDesc/tei:msContents/tei:summary[@n='whole']/tei:seg),
                 'origDate': string-join(//tei:origDate, ', ')
             },
             map{'method': 'json', 'indent': true()}

@@ -28,7 +28,7 @@ eleventyComputed:
     <tr>
         <th>{{ t.headers.documentId }}</th>
         <th>{{ t.headers.title }}</th>
-        <th>{{ t.headers.findspot }}</th>
+        <th>{{ t.headers.category }}</th>
         <th>{{ t.headers.dating }}</th>
         <th>{{ t.headers.sourceFile }}</th>
     </tr>
@@ -39,7 +39,7 @@ eleventyComputed:
             <tr>
                 <td><a href="{{ seal.url }}">{{ seal.data.documentId }}</a></td>
                 <td>{{ seal.data.title }}</td>
-                <td>{{ seal.data.findspot }}</td>
+                <td>{{ seal.data.category }}</td>
                 <td>{{ seal.data.origDate }}</td>
                 <td><code>{{ seal.data.sourceFile }}</code></td>
             </tr>

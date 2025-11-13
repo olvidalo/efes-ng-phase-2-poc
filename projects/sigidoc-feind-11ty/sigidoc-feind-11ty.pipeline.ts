@@ -3,9 +3,27 @@ import {fileRef, from, Pipeline} from "../../src/core/pipeline";
 import {CopyFilesNode} from "../../src/io/copyFilesNode";
 import {EleventyBuildNode} from "../../src/eleventy";
 
+// We copy the eleventy site files to the intermediate directory so that they can be used as input for the Eleventy build.
+// In the next step, we add the transformed EpiDoc XML files as HTML partials to the inscription directory.
 
-// English
+const copyEleventySite = new CopyFilesNode({
+    name: "copy-eleventy-site",
+    config: {
+        sourceFiles: "1-input/eleventy-site/**/*"
+    },
+    outputConfig: {
+        outputDir: "2-intermediate",
+        stripPathPrefix: "1-input"
+    }
+})
 
+
+// The SigiDoc source files contain data in three different languages: German, English, and Greek.
+// We have to create static pages for each language.
+
+// ---- ENGLISH ----
+// We use the stylesheet prune-to-language derived from EFES/Kiln to prune the EpiDoc XML files to only include
+// the data for one language. The language is specified as a parameter to the stylesheet.
 const pruneEpidocEnglish = new XsltTransformNode({
     name: "prune-epidoc-english",
     config: {
@@ -17,6 +35,8 @@ const pruneEpidocEnglish = new XsltTransformNode({
     }
 })
 
+// Transforms the generated English SigiDoc XML files into HTML partials using the SigiDoc stylesheets.
+// Outputs them to the inscription directory of the intermediate eleventy-site directory.
 const transformEpiDocEnglish = new XsltTransformNode({
     name: "transform-epidoc-en",
     config: {
@@ -32,6 +52,11 @@ const transformEpiDocEnglish = new XsltTransformNode({
         extension: ".html"
     }
 })
+
+// Extracts metadata from each English SigiDoc XML source file to a JSON
+// companion file as metadata for Eleventy that it can use to generate the inscription navigation and the inscription
+// list. Outputs the JSON files to the inscription directory of the intermediate eleventy-site directory, alongside the
+// HTML partials.
 
 const createEpiDoc11tyFrontmatterEnglish = new XsltTransformNode({
     name: "create-epidoc-11ty-frontmatter-en",
@@ -50,7 +75,8 @@ const createEpiDoc11tyFrontmatterEnglish = new XsltTransformNode({
 })
 
 
-// German
+// ---- GERMAN ----
+// (same workflow as for English)
 
 const pruneEpidocGerman = new XsltTransformNode({
     name: "prune-epidoc-german",
@@ -96,7 +122,8 @@ const createEpiDoc11tyFrontmatterGerman = new XsltTransformNode({
 })
 
 
-// Greek
+// ---- GREEK ----
+// (same workflow as for English)
 
 const pruneEpidocGreek = new XsltTransformNode({
     name: "prune-epidoc-greek",
@@ -142,18 +169,9 @@ const createEpiDoc11tyFrontmatterGreek = new XsltTransformNode({
 })
 
 
-const copyEleventySite = new CopyFilesNode({
-    name: "copy-eleventy-site",
-    config: {
-        sourceFiles: "1-input/eleventy-site/**/*"
-    },
-    outputConfig: {
-        outputDir: "2-intermediate",
-        stripPathPrefix: "1-input"
-    }
-})
+// ---- FINAL ASSEMBLY ----
 
-
+// Calls Eleventy to build the site and outputs the result to the output directory.
 const eleventyBuild = new EleventyBuildNode({
     name: 'eleventy-build',
     config: {
@@ -162,6 +180,8 @@ const eleventyBuild = new EleventyBuildNode({
     outputConfig: {
         outputDir: '3-output',
     },
+
+    // Make sure the other nodes run before this one so all necessary files have been generated.
     explicitDependencies: [
         "transform-epidoc-en",
         "create-epidoc-11ty-frontmatter-en",
@@ -174,14 +194,14 @@ const eleventyBuild = new EleventyBuildNode({
 });
 
 
-
-
+// Create the pipeline
 const pipeline = new Pipeline("IRCyR Eleventy",".efes-build", ".efes-cache", "dynamic");
 
 
 (async () => {
     await pipeline
 
+        // Add all nodes
         .addNode(pruneEpidocEnglish)
         .addNode(transformEpiDocEnglish)
         .addNode(createEpiDoc11tyFrontmatterEnglish)
@@ -197,5 +217,6 @@ const pipeline = new Pipeline("IRCyR Eleventy",".efes-build", ".efes-cache", "dy
         .addNode(copyEleventySite)
         .addNode(eleventyBuild)
 
+        // Run the pipeline
         .run();
 })()

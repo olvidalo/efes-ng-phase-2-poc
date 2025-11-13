@@ -11,6 +11,7 @@ import {getResource, XPath} from 'saxonjs-he';
 interface CompileStylesheetConfig extends PipelineNodeConfig {
     config: {
         stylesheets: Input;  // xslt files to compile
+        stubLibPath?: FileRef | Input;  // Optional path to stub library JSON
     };
     outputConfig?: UnifiedOutputConfig;
 }
@@ -25,6 +26,19 @@ export class CompileStylesheetNode extends PipelineNode<CompileStylesheetConfig,
 
     async run(context: PipelineContext) {
         const xsltPaths = await context.resolveInput(this.config.config.stylesheets);
+
+        // Resolve stubLibPath if provided
+        let resolvedStubLibPath: string | undefined;
+        if (this.config.config.stubLibPath) {
+            if (typeof this.config.config.stubLibPath === "object" && "path" in this.config.config.stubLibPath) {
+                // It's a FileRef
+                resolvedStubLibPath = path.resolve(this.config.config.stubLibPath.path);
+            } else {
+                // It's an Input - resolve it and take the first result
+                const resolved = await context.resolveInput(this.config.config.stubLibPath);
+                resolvedStubLibPath = resolved.length > 0 ? path.resolve(resolved[0]) : undefined;
+            }
+        }
 
         const results = await this.withCache<"compiledStylesheet">(
             context,
@@ -65,7 +79,7 @@ export class CompileStylesheetNode extends PipelineNode<CompileStylesheetConfig,
                         nodeName: this.name,
                         xsltPath: item,
                         outputPath,
-                        stubLibPath: path.resolve('kiln-functions-stub.json')
+                        stubLibPath: resolvedStubLibPath
                     });
 
                     this.log(context, `Compiled: ${result.outputPath}`);

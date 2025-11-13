@@ -13,6 +13,7 @@ interface XsltTransformConfig extends PipelineNodeConfig {
         templateParams?: Record<string, any | ((inputPath: string) => any)>;
         serializationParams?: Record<string, any>;
         initialMode?: string;
+        stubLibPath?: FileRef | Input;  // Optional path to stub library JSON
     };
     outputConfig?: UnifiedOutputConfig;
 }
@@ -29,6 +30,7 @@ export class XsltTransformNode extends CompositeNode<XsltTransformConfig, "trans
                 stylesheets: typeof this.config.config.stylesheet === "object" && "path" in this.config.config.stylesheet
                     ? this.config.config.stylesheet.path
                     : this.config.config.stylesheet,
+                stubLibPath: this.config.config.stubLibPath,
             },
         })
 

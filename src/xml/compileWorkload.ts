@@ -7,7 +7,7 @@ export interface CompileJob {
     nodeName: string;
     xsltPath: string;
     outputPath: string;
-    stubLibPath: string;
+    stubLibPath?: string;
 }
 
 export interface CompileResult {
@@ -35,12 +35,19 @@ export async function performWork(job: CompileJob): Promise<CompileResult> {
     return new Promise<CompileResult>((resolve, reject) => {
         // Use spawn instead of fork since xslt3-he is a binary, not a Node script
         const xslt3Binary = resolveXslt3Binary();
-        const child = spawn(xslt3Binary, [
+        const args = [
             `-xsl:${job.xsltPath}`,
             `-export:${job.outputPath}`,
-            `-stublib:${job.stubLibPath}`,
-            '-nogo'
-        ], {
+        ];
+
+        // Only add stublib if provided
+        if (job.stubLibPath) {
+            args.push(`-stublib:${job.stubLibPath}`);
+        }
+
+        args.push('-nogo');
+
+        const child = spawn(xslt3Binary, args, {
             stdio: ['ignore', 'pipe', 'pipe'] // Capture stdout and stderr
         });
 

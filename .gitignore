@@ -21,4 +21,5 @@ projects/*/3-output/*
 
 pages/*
 !pages/.keep
+!pages/index.html
 
