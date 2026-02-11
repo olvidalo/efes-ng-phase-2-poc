@@ -1,0 +1,26 @@
+---
+layout: layouts/base.njk
+title: Bibliography Concordance
+permalink: en/concordances/bibliography/index.html
+---
+
+<p>{{ concordance.bibliography.entries | length }} bibliography entries cited in the inscriptions.</p>
+
+<table class="index-table">
+    <thead>
+        <tr>
+            <th>Short Citation</th>
+            <th>Full Citation</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for entry in concordance.bibliography.entries %}
+        <tr>
+            <td><a href="/en/concordances/bibliography/{{ entry.bibRef }}/index.html">{{ entry.shortCitation | default(entry.bibRef) }}</a></td>
+            <td>{{ entry.fullCitation | default('-') }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+{% include "partials/index-table-styles.njk" %}

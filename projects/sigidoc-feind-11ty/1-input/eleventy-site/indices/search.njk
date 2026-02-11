@@ -1,0 +1,422 @@
+---
+pagination:
+  data: languages
+  size: 1
+  alias: langCode
+languages: ["en", "de", "el"]
+permalink: "{{ langCode }}/search/index.html"
+layout: layouts/base.njk
+eleventyComputed:
+  title: "{{ translations[langCode].search.pageTitle }}"
+  language: "{{ langCode }}"
+---
+
+{% set t = translations[langCode] %}
+
+<script src="https://rawcdn.githack.com/nextapps-de/flexsearch/0.8.2/dist/flexsearch.bundle.min.js"></script>
+
+<div class="search-layout">
+    <!-- Facet Sidebar -->
+    <aside class="facet-sidebar">
+        <h2>{{ t.search.filterResults }}</h2>
+
+        <!-- Date Range Filter -->
+        <div class="facet-section">
+            <div class="facet-header collapsed" onclick="this.classList.toggle('collapsed');this.nextElementSibling.classList.toggle('collapsed')">{{ t.search.dateRange }}</div>
+            <div class="facet-content collapsed" id="date-range">
+                <div class="date-range-inputs">
+                    <label>
+                        {{ t.search.fromYear }}
+                        <input type="number" id="date-from" placeholder="e.g. 500">
+                    </label>
+                    <label>
+                        {{ t.search.toYear }}
+                        <input type="number" id="date-to" placeholder="e.g. 1200">
+                    </label>
+                </div>
+                <button class="clear-dates-btn" id="clear-dates">{{ t.search.clearDates }}</button>
+            </div>
+        </div>
+
+        <!-- Dynamic Facets -->
+        <div id="facets-container"></div>
+
+        <div class="filter-actions">
+            <button id="clear-all-filters">{{ t.search.clearAll }}</button>
+        </div>
+    </aside>
+
+    <!-- Main Search Area -->
+    <div class="search-main">
+        <div class="search-input-container">
+            <input type="text" id="search-input" placeholder="{{ t.search.placeholder }}" autocomplete="off">
+            <button id="search-button">{{ t.search.searchButton }}</button>
+        </div>
+
+        <div id="search-progress">
+            <p class="progress-text" id="progress-text">{{ t.search.loading }}</p>
+        </div>
+
+        <div id="active-filters"></div>
+
+        <div id="search-results" style="display:none;">
+            <p id="search-status"></p>
+            <ul id="results-list"></ul>
+        </div>
+    </div>
+</div>
+
+<script src="/assets/js/search.js"></script>
+<script>
+    EfesSearch.init({
+        searchDataUrl: '../../search-data',
+        facets: {
+            material:               { label: '{{ t.search.material }}' },
+            objectType:             { label: '{{ t.search.objectType }}' },
+            language:               { label: '{{ t.search.language }}' },
+            personalNames:          { label: '{{ t.search.personalNames }}' },
+            familyNames:            { label: '{{ t.search.familyNames }}' },
+            gender:                 { label: '{{ t.search.gender }}' },
+            milieu:                 { label: '{{ t.search.milieu }}' },
+            placeNames:             { label: '{{ t.search.placeNames }}' },
+            dignities:              { label: '{{ t.search.dignities }}' },
+            civilOffices:           { label: '{{ t.search.civilOffices }}' },
+            ecclesiasticalOffices:  { label: '{{ t.search.ecclesiasticalOffices }}' },
+            militaryOffices:        { label: '{{ t.search.militaryOffices }}' },
+            collection:             { label: '{{ t.search.collection }}' },
+            metrical:               { label: '{{ t.search.metrical }}' },
+            monogram:               { label: '{{ t.search.monogram }}' },
+        },
+        expandedFacets: ['material', 'objectType', 'language', 'gender'],
+        resultUrl: (doc) => '../../{{ langCode }}/seals/' + doc.documentId + '.html',
+        resultDetails: ['origDate', 'material', 'collection'],
+    });
+</script>
+
+<style>
+/* Reduce base layout spacing for search page */
+main { margin-top: 0.5rem !important; padding-top: 0.5rem !important; }
+
+.search-layout {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+    overflow: hidden;
+}
+
+.facet-sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0.5rem;
+}
+
+.facet-sidebar h2 {
+    font-size: 1rem;
+    margin: 0 0 0.75rem;
+    color: var(--primary-color);
+    border: none;
+}
+
+.search-main {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+/* Search input */
+.search-input-container {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.search-input-container input {
+    flex: 1;
+    padding: 0.6rem 1rem;
+    font-size: 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 6px;
+    transition: border-color 0.2s;
+}
+
+.search-input-container input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+.search-input-container button {
+    padding: 0.6rem 1.5rem;
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background 0.2s;
+}
+
+.search-input-container button:hover {
+    background: var(--primary-hover);
+}
+
+/* Progress */
+#search-progress {
+    text-align: center;
+    padding: 2rem;
+    color: #718096;
+}
+
+/* Facet sections */
+.facet-section {
+    background: var(--bg-light);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    margin-bottom: 0.5rem;
+    overflow: hidden;
+}
+
+.facet-header {
+    padding: 0.5rem 0.65rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: white;
+}
+
+.facet-header::after {
+    content: '\25BC';
+    font-size: 0.65rem;
+    color: #a0aec0;
+    transition: transform 0.2s;
+}
+
+.facet-header.collapsed::after {
+    transform: rotate(-90deg);
+}
+
+.facet-content {
+    padding: 0.4rem 0.65rem;
+    max-height: 180px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+.facet-content.collapsed {
+    display: none;
+}
+
+.facet-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.2rem 0;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.facet-item input[type="checkbox"] {
+    margin: 0;
+    flex-shrink: 0;
+}
+
+.facet-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.facet-count {
+    color: #a0aec0;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+}
+
+.facet-item-disabled {
+    opacity: 0.4;
+}
+
+#date-range {
+    max-height: none;
+    overflow-y: visible;
+}
+
+/* Date range */
+.date-range-inputs {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.date-range-inputs label {
+    font-size: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.date-range-inputs input {
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.clear-dates-btn {
+    margin-top: 0.5rem;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    color: #718096;
+}
+
+.clear-dates-btn:hover {
+    background: #edf2f7;
+}
+
+/* Active filters */
+.active-filters-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    background: #ebf8ff;
+    border-radius: 6px;
+}
+
+.active-filters-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--primary-color);
+}
+
+.filter-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    background: #1976d2;
+    color: white;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
+.filter-tag-remove {
+    background: none;
+    border: none;
+    color: white;
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 0;
+    line-height: 1;
+    opacity: 0.8;
+}
+
+.filter-tag-remove:hover {
+    opacity: 1;
+}
+
+/* Filter actions */
+.filter-actions {
+    margin-top: 0.5rem;
+}
+
+.filter-actions button {
+    width: 100%;
+    padding: 0.5rem;
+    font-size: 0.85rem;
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    color: #718096;
+    transition: all 0.2s;
+}
+
+.filter-actions button:hover {
+    background: #fed7d7;
+    border-color: #fc8181;
+    color: #c53030;
+}
+
+/* Search status */
+#search-status {
+    font-size: 0.9rem;
+    color: #718096;
+    margin-bottom: 1rem;
+}
+
+/* Results */
+#results-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.search-result-item {
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    margin-bottom: 0.5rem;
+    transition: box-shadow 0.2s;
+}
+
+.search-result-item:hover {
+    box-shadow: var(--shadow-sm);
+}
+
+.search-result-item a {
+    color: var(--accent-color);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.95rem;
+}
+
+.search-result-item a:hover {
+    text-decoration: underline;
+}
+
+.doc-id {
+    display: inline-block;
+    background: #edf2f7;
+    color: #4a5568;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.search-result-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 0.35rem;
+    font-size: 0.8rem;
+    color: #718096;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .search-layout {
+        flex-direction: column;
+    }
+
+    .facet-sidebar {
+        width: 100%;
+        position: static;
+        max-height: none;
+    }
+}
+</style>

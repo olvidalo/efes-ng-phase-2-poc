@@ -41,16 +41,14 @@ export class FlexSearchIndexNode extends PipelineNode<FlexSearchIndexConfig, "se
         const searchIndex = new FlexSearch.Document(indexConfig);
 
         // Add documents to index
-        documents.forEach((doc: any, i: number) => {
-            // Add numeric ID and flatten text arrays
-            const indexDoc = {
-                num_id: i,
-                ...doc,
-
-                // TODO: not sure why we are flattening arrays
-                text: Array.isArray(doc.text) ? doc.text.join(' ') : doc.text,
-                document_title: Array.isArray(doc.document_title) ? doc.document_title.join(' ') : doc.document_title
-            };
+        documents.forEach((doc: any) => {
+            const indexDoc = { ...doc };
+            // Flatten array values in text fields (FlexSearch expects strings)
+            for (const field of this.config.config.textFields) {
+                if (Array.isArray(indexDoc[field])) {
+                    indexDoc[field] = indexDoc[field].join(' ');
+                }
+            }
             searchIndex.add(indexDoc);
         });
 
@@ -60,10 +58,11 @@ export class FlexSearchIndexNode extends PipelineNode<FlexSearchIndexConfig, "se
         // Generate facet counts for JavaScript filtering
         const facets = this.generateFacets(documents);
 
-        // Write facets and metadata
+        // Write facets, metadata, and documents for client-side filtering
         await fs.writeFile(path.join(outputDir, 'facets.json'), JSON.stringify(facets, null, 2));
         await fs.writeFile(path.join(outputDir, 'count.json'), JSON.stringify({ total: documents.length }));
-        await fs.writeFile(path.join(outputDir, 'config.json'), JSON.stringify(indexConfig))
+        await fs.writeFile(path.join(outputDir, 'config.json'), JSON.stringify(indexConfig));
+        await fs.writeFile(path.join(outputDir, 'documents.json'), JSON.stringify(documents));
 
         const writtenFiles: string[] = []
         await searchIndex.export(async (key: string, data: any) => {
@@ -73,7 +72,7 @@ export class FlexSearchIndexNode extends PipelineNode<FlexSearchIndexConfig, "se
         await fs.writeFile(path.join(outputDir, 'index.json'), JSON.stringify(writtenFiles, null, 2));
 
         this.log(context, `FlexSearch index generated: ${outputDir}`);
-        return [{ searchIndex: [...writtenFiles, 'facets.json', 'count.json', 'config.json', 'index.json' ].map(file => path.join(outputDir, file)) }];
+        return [{ searchIndex: [...writtenFiles, 'facets.json', 'count.json', 'config.json', 'documents.json', 'index.json' ].map(file => path.join(outputDir, file)) }];
     }
 
     private generateFacets(documents: any[]): Record<string, Record<string, number>> {

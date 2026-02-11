@@ -1,0 +1,35 @@
+---
+pagination:
+  data: languages
+  size: 1
+  alias: langCode
+languages: ["en", "de", "el"]
+permalink: "{{ langCode }}/bibliography/index.html"
+layout: layouts/base.njk
+eleventyComputed:
+  title: "{{ translations[langCode].nav.bibliography }}"
+  language: "{{ langCode }}"
+---
+
+{% set t = translations[langCode] %}
+
+<p>{{ concordance.bibliography.entries | length }} bibliography entries cited in the seals.</p>
+
+<table class="index-table">
+    <thead>
+        <tr>
+            <th>Short Citation</th>
+            <th>Full Citation</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for entry in concordance.bibliography.entries %}
+        <tr>
+            <td><a href="/en/bibliography/{{ entry.bibRef }}/">{{ entry.shortCitation | default(entry.bibRef) }}</a></td>
+            <td>{{ entry.fullCitation | default('-') }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+{% include "partials/index-table-styles.njk" %}

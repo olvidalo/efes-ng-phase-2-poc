@@ -21,8 +21,6 @@
       <excludeFolder url="file://$MODULE_DIR$/projects/ircyr-11ty/.efes-cache" />
       <excludeFolder url="file://$MODULE_DIR$/projects/ircyr-11ty/2-intermediate" />
       <excludeFolder url="file://$MODULE_DIR$/projects/ircyr-11ty/3-output" />
-      <excludeFolder url="file://$MODULE_DIR$/projects/ircyr-xslt/2-intermediate" />
-      <excludeFolder url="file://$MODULE_DIR$/projects/ircyr-xslt/3-output" />
       <excludeFolder url="file://$MODULE_DIR$/pages" />
       <excludeFolder url="file://$MODULE_DIR$/projects/sigidoc-feind-11ty/.efes-build" />
       <excludeFolder url="file://$MODULE_DIR$/projects/sigidoc-feind-11ty/.efes-cache" />

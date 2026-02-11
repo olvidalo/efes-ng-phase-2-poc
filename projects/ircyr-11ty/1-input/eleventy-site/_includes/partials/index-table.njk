@@ -1,0 +1,85 @@
+{# Data-driven index table partial
+   Usage: {% include "partials/index-table.njk" %}
+   Requires: indexData variable with { columns, entries, notes, description }
+#}
+
+{% if indexData %}
+    {% if indexData.description %}
+    <p class="index-intro">{{ indexData.description }}</p>
+    {% endif %}
+
+    {% if indexData.notes and indexData.notes.length > 0 %}
+    <div class="index-notes">
+        {% for note in indexData.notes %}
+        <p>{{ note }}</p>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {# Macro for rendering a table with entries #}
+    {% macro renderTable(entries, columns) %}
+    <table class="index-table">
+        <thead>
+            <tr>
+                {% for col in columns %}
+                <th>{{ col.header }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+        {% for entry in entries %}
+            <tr>
+                {% for col in columns %}
+                    {% if col.type == 'link' %}
+                        {# External link column #}
+                        <td>
+                            {% if entry[col.key] %}
+                                <a href="{{ entry[col.key] }}" target="_blank" rel="noopener">{{ entry[col.key] }}</a>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    {% elif col.type == 'references' %}
+                        {# Aggregated references column — brackets indicate restored text #}
+                        <td class="references">
+                            {% for ref in entry.references %}
+                                {%- if ref.isRestored %}[{% endif -%}
+                                <a href="/en/inscriptions/{{ ref.inscriptionId }}.html"><strong>{{ ref.inscriptionId }}</strong></a>
+                                {%- if ref.isRestored %}]{% endif -%}
+                                {%- if not loop.last %} {% endif %}
+                            {% endfor %}
+                        </td>
+                    {% else %}
+                        {# Default: plain text column #}
+                        <td>{{ entry[col.key] | default('-') }}</td>
+                    {% endif %}
+                {% endfor %}
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endmacro %}
+
+    {% if indexData.groups and indexData.groups.length > 0 %}
+        {# Grouped tables #}
+        {% set totalEntries = 0 %}
+        {% for group in indexData.groups %}
+            {% set totalEntries = totalEntries + group.entries.length %}
+        {% endfor %}
+        <p class="entry-count-info">{{ totalEntries }} unique entries in {{ indexData.groups | length }} groups</p>
+
+        {% for group in indexData.groups %}
+            <h3>{{ group.groupLabel }}</h3>
+            <p class="group-count-info">{{ group.entries | length }} entries</p>
+            {{ renderTable(group.entries, indexData.columns) }}
+        {% endfor %}
+    {% else %}
+        {# Original flat table #}
+        <p class="entry-count-info">{{ indexData.entries | length }} unique entries</p>
+        {{ renderTable(indexData.entries, indexData.columns) }}
+    {% endif %}
+{% else %}
+    <p>No index data available.</p>
+{% endif %}
+
+{% include "partials/index-table-styles.njk" %}

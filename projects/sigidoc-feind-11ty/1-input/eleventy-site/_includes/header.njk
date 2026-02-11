@@ -3,23 +3,42 @@
         <div class="large-12 columns">
             <div class="header-content">
                 <h1 id="site-title">
-                    <span id="site-title-abbr">IRCyr</span>
+                    <span id="site-title-abbr">SigiDoc</span>
                     <span class="title-separator"></span>
-                    <span id="site-title-full">seals of Roman Cyrenaica</span>
+                    <span id="site-title-full">Sammlung Robert Feind</span>
                 </h1>
 
                 {% if language %}
+                <nav class="site-nav">
+                    {% set t = translations[language] %}
+                    <a href="/{{ language }}/seals/" class="nav-link">{{ t.nav.seals }}</a>
+                    <div class="nav-dropdown">
+                        <a href="/{{ language }}/indices/" class="nav-link nav-dropdown-toggle">{{ t.nav.indices }}</a>
+                        <ul class="nav-dropdown-menu">
+                            {% if indices and indices._summary and indices._summary.indices %}
+                                {% for idx in indices._summary.indices %}
+                                <li><a href="/{{ language }}/indices/{{ idx.id }}/">{{ idx.title }}</a></li>
+                                {% endfor %}
+                            {% else %}
+                                <li><a href="/{{ language }}/indices/persons/">{{ t.indices.persons }}</a></li>
+                                <li><a href="/{{ language }}/indices/places/">{{ t.indices.places }}</a></li>
+                                <li><a href="/{{ language }}/indices/dignities/">{{ t.indices.dignities }}</a></li>
+                                <li><a href="/{{ language }}/indices/offices/">{{ t.indices.offices }}</a></li>
+                                <li><a href="/{{ language }}/indices/invocations/">{{ t.indices.invocations }}</a></li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                    <a href="/{{ language }}/bibliography/" class="nav-link">{{ t.nav.bibliography }}</a>
+                    <a href="/{{ language }}/search/" class="nav-link">{{ t.nav.search }}</a>
+                </nav>
+
                 <nav class="language-switcher">
-                    {% set langLabels = {en: 'English', de: 'Deutsch', el: 'Ελληνικά'} %}
+                    {% set langLabels = {en: 'EN', de: 'DE', el: 'ελ'} %}
                     {% for lang in ['en', 'de', 'el'] %}
                         {% if lang == language %}
                             <span class="lang-current">{{ langLabels[lang] }}</span>
                         {% else %}
-                            {% if documentId %}
-                                <a href="/{{ lang }}/seals/{{ documentId }}.html" class="lang-link">{{ langLabels[lang] }}</a>
-                            {% else %}
-                                <a href="/{{ lang }}/seals/" class="lang-link">{{ langLabels[lang] }}</a>
-                            {% endif %}
+                            <a href="{{ page.url | replace('/' + language + '/', '/' + lang + '/') }}" class="lang-link">{{ langLabels[lang] }}</a>
                         {% endif %}
                     {% endfor %}
                 </nav>
@@ -55,6 +74,72 @@
         flex-wrap: wrap;
         gap: 1rem;
         flex: 1;
+    }
+
+    .site-nav {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+    }
+
+    .nav-link {
+        padding: 0.375rem 0.75rem;
+        border-radius: 4px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: #e2e8f0;
+        text-decoration: none;
+        transition: all 0.2s ease;
+    }
+
+    .nav-link:hover {
+        background: rgba(255, 255, 255, 0.15);
+        color: white;
+    }
+
+    .nav-dropdown {
+        position: relative;
+    }
+
+    .nav-dropdown-toggle::after {
+        content: '\25BE';
+        margin-left: 0.25rem;
+        font-size: 0.7rem;
+    }
+
+    .nav-dropdown-menu {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        margin: 0.25rem 0 0;
+        padding: 0.35rem 0;
+        list-style: none;
+        background: #2d3748;
+        border-radius: 6px;
+        border-top: 2px solid #4299e1;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+        min-width: 180px;
+        z-index: 100;
+    }
+
+    .nav-dropdown:hover .nav-dropdown-menu {
+        display: block;
+    }
+
+    .nav-dropdown-menu li a {
+        display: block;
+        padding: 0.4rem 1rem;
+        color: #e2e8f0;
+        text-decoration: none;
+        font-size: 0.85rem;
+        white-space: nowrap;
+        transition: background 0.15s;
+    }
+
+    .nav-dropdown-menu li a:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
     }
 
     .language-switcher {
@@ -94,7 +179,7 @@
     }
 
     #site-title-abbr {
-        font-size: 2.5rem;
+        font-size: 2.2rem;
         font-weight: 800;
         color: #fff;
         letter-spacing: 0.05em;

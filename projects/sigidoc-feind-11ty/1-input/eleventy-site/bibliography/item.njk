@@ -1,0 +1,39 @@
+---
+pagination:
+  data: concordance.bibliography.entries
+  size: 1
+  alias: item
+permalink: "en/bibliography/{{ item.bibRef }}/index.html"
+layout: layouts/base.njk
+eleventyComputed:
+  title: "Bibliography: {{ item.shortCitation }}"
+  language: "en"
+---
+
+<p class="full-citation">{{ item.fullCitation }}</p>
+
+<p><a href="/en/bibliography/">&larr; Back to bibliography</a></p>
+
+<table class="index-table">
+    <thead>
+        <tr>
+            <th>Cited Range</th>
+            <th>Seals</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for range in item.citedRanges %}
+        <tr>
+            <td>{{ range.citedRange | default('-') }}</td>
+            <td class="references">
+                {% for sealId in range.inscriptions %}
+                    <a href="/en/seals/{{ sealId }}.html"><strong>{{ sealId }}</strong></a>
+                    {%- if not loop.last %} {% endif %}
+                {% endfor %}
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+{% include "partials/index-table-styles.njk" %}

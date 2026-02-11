@@ -1,0 +1,80 @@
+---
+pagination:
+  data: languages
+  size: 1
+  alias: langCode
+languages: ["en", "de", "el"]
+permalink: "{{ langCode }}/indices/index.html"
+layout: layouts/base.njk
+eleventyComputed:
+  title: "{{ translations[langCode].indices.pageTitle }}"
+  language: "{{ langCode }}"
+---
+
+{% set t = translations[langCode] %}
+
+<p class="index-intro">{{ t.indices.intro }}</p>
+
+<div class="indices-grid">
+{% if indices._summary and indices._summary.indices %}
+    {% for idx in indices._summary.indices %}
+    <a href="/{{ langCode }}/indices/{{ idx.id }}/" class="index-card">
+        <h3>{{ idx.title }}</h3>
+        {% if idx.description %}
+        <p>{{ idx.description }}</p>
+        {% endif %}
+        <span class="entry-count">{{ idx.entryCount }} {{ t.indices.entries }}</span>
+    </a>
+    {% endfor %}
+{% else %}
+    <p>{{ t.indices.noIndices }}</p>
+{% endif %}
+</div>
+
+<style>
+.indices-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-top: 2rem;
+}
+
+.index-card {
+    display: block;
+    padding: 1.5rem;
+    background: linear-gradient(to bottom right, #ffffff, #f7fafc);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    box-shadow: var(--shadow-sm);
+}
+
+.index-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--accent-color);
+}
+
+.index-card h3 {
+    margin: 0 0 0.5rem;
+    color: var(--primary-color);
+    font-size: 1.25rem;
+}
+
+.index-card p {
+    margin: 0 0 1rem;
+    color: var(--text-color);
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.index-card .entry-count {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    background: var(--bg-light);
+    border-radius: 12px;
+    font-size: 0.8rem;
+    color: #666;
+}
+</style>

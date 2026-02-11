@@ -12,10 +12,52 @@
       },
       "noSeals": "No seals available."
     },
+    "indices": {
+      "pageTitle": "Indices",
+      "intro": "Browse the entity indices for the seal collection.",
+      "entries": "entries",
+      "noIndices": "No indices available yet.",
+      "persons": "Persons",
+      "places": "Place Names",
+      "dignities": "Dignities",
+      "offices": "Offices",
+      "invocations": "Invocations"
+    },
+    "search": {
+      "pageTitle": "Search",
+      "filterResults": "Filter Results",
+      "dateRange": "Date Range",
+      "fromYear": "From year",
+      "toYear": "To year",
+      "clearDates": "Clear Dates",
+      "clearAll": "Clear All Filters",
+      "placeholder": "Search seals...",
+      "searchButton": "Search",
+      "loading": "Loading search index...",
+      "material": "Material",
+      "objectType": "Object Type",
+      "language": "Language",
+      "personalNames": "Personal Names",
+      "familyNames": "Family Names",
+      "gender": "Gender",
+      "milieu": "Milieu",
+      "placeNames": "Place Names",
+      "dignities": "Dignities",
+      "civilOffices": "Civil Offices",
+      "ecclesiasticalOffices": "Ecclesiastical Offices",
+      "militaryOffices": "Military Offices",
+      "collection": "Collection",
+      "metrical": "Metrical",
+      "monogram": "Monogram"
+    },
     "nav": {
       "backToIndex": "Back to Seal Index",
       "previous": "Previous",
-      "next": "Next"
+      "next": "Next",
+      "seals": "Seals",
+      "indices": "Indices",
+      "bibliography": "Bibliography",
+      "search": "Search"
     }
   },
   "de": {
@@ -31,10 +73,52 @@
       },
       "noSeals": "Keine Siegel verfügbar."
     },
+    "indices": {
+      "pageTitle": "Indizes",
+      "intro": "Durchsuchen Sie die Verzeichnisse der Siegelsammlung.",
+      "entries": "Einträge",
+      "noIndices": "Noch keine Indizes verfügbar.",
+      "persons": "Personen",
+      "places": "Ortsnamen",
+      "dignities": "Würden",
+      "offices": "Ämter",
+      "invocations": "Anrufungen"
+    },
+    "search": {
+      "pageTitle": "Suche",
+      "filterResults": "Ergebnisse filtern",
+      "dateRange": "Zeitraum",
+      "fromYear": "Von Jahr",
+      "toYear": "Bis Jahr",
+      "clearDates": "Daten löschen",
+      "clearAll": "Alle Filter löschen",
+      "placeholder": "Siegel durchsuchen...",
+      "searchButton": "Suchen",
+      "loading": "Suchindex wird geladen...",
+      "material": "Material",
+      "objectType": "Objekttyp",
+      "language": "Sprache",
+      "personalNames": "Personennamen",
+      "familyNames": "Familiennamen",
+      "gender": "Geschlecht",
+      "milieu": "Milieu",
+      "placeNames": "Ortsnamen",
+      "dignities": "Würden",
+      "civilOffices": "Zivile Ämter",
+      "ecclesiasticalOffices": "Kirchliche Ämter",
+      "militaryOffices": "Militärische Ämter",
+      "collection": "Sammlung",
+      "metrical": "Metrisch",
+      "monogram": "Monogramm"
+    },
     "nav": {
       "backToIndex": "Zurück zum Siegelindex",
       "previous": "Vorheriges",
-      "next": "Nächstes"
+      "next": "Nächstes",
+      "seals": "Siegel",
+      "indices": "Indizes",
+      "bibliography": "Bibliographie",
+      "search": "Suche"
     }
   },
   "el": {
@@ -50,10 +134,52 @@
       },
       "noSeals": "Δεν υπάρχουν διαθέσιμες σφραγίδες."
     },
+    "indices": {
+      "pageTitle": "Ευρετήρια",
+      "intro": "Περιηγηθείτε στα ευρετήρια της συλλογής σφραγίδων.",
+      "entries": "καταχωρήσεις",
+      "noIndices": "Δεν υπάρχουν ακόμη διαθέσιμα ευρετήρια.",
+      "persons": "Πρόσωπα",
+      "places": "Τοπωνύμια",
+      "dignities": "Αξιώματα",
+      "offices": "Υπηρεσίες",
+      "invocations": "Επικλήσεις"
+    },
+    "search": {
+      "pageTitle": "Αναζήτηση",
+      "filterResults": "Φιλτράρισμα αποτελεσμάτων",
+      "dateRange": "Χρονολογικό εύρος",
+      "fromYear": "Από έτος",
+      "toYear": "Έως έτος",
+      "clearDates": "Καθαρισμός ημερομηνιών",
+      "clearAll": "Καθαρισμός όλων των φίλτρων",
+      "placeholder": "Αναζήτηση σφραγίδων...",
+      "searchButton": "Αναζήτηση",
+      "loading": "Φόρτωση ευρετηρίου αναζήτησης...",
+      "material": "Υλικό",
+      "objectType": "Τύπος αντικειμένου",
+      "language": "Γλώσσα",
+      "personalNames": "Προσωπικά ονόματα",
+      "familyNames": "Οικογενειακά ονόματα",
+      "gender": "Φύλο",
+      "milieu": "Περιβάλλον",
+      "placeNames": "Τοπωνύμια",
+      "dignities": "Αξιώματα",
+      "civilOffices": "Πολιτικά αξιώματα",
+      "ecclesiasticalOffices": "Εκκλησιαστικά αξιώματα",
+      "militaryOffices": "Στρατιωτικά αξιώματα",
+      "collection": "Συλλογή",
+      "metrical": "Μετρικό",
+      "monogram": "Μονόγραμμα"
+    },
     "nav": {
       "backToIndex": "Επιστροφή στο ευρετήριο σφραγίδων",
       "previous": "Προηγούμενο",
-      "next": "Επόμενο"
+      "next": "Επόμενο",
+      "seals": "Σφραγίδες",
+      "indices": "Ευρετήρια",
+      "bibliography": "Βιβλιογραφία",
+      "search": "Αναζήτηση"
     }
   }
 }

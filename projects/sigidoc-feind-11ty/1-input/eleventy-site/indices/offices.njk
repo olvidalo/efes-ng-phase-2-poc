@@ -1,0 +1,15 @@
+---
+pagination:
+  data: languages
+  size: 1
+  alias: langCode
+languages: ["en", "de", "el"]
+permalink: "{{ langCode }}/indices/offices/index.html"
+layout: layouts/base.njk
+eleventyComputed:
+  title: "{{ translations[langCode].indices.offices }}"
+  language: "{{ langCode }}"
+---
+
+{% set indexData = indices.offices %}
+{% include "partials/index-table.njk" %}

@@ -30,16 +30,18 @@ export class CopyFilesNode extends PipelineNode<CopyFilesConfig, "copied"> {
 
             if (!this.config.outputConfig.overwrite) {
                 try {
-                    await access(destPath, constants.F_OK)
-                    // File already exists, skip but add to list of copied files for resolving outputs
-                    // this.log(context, `Skipped: ${sourcePath} → ${destPath}`);
-                    copiedFiles.push(destPath);
-                    continue;
+                    const destStat = await stat(destPath);
+                    const sourceStat = await stat(sourcePath);
+                    // Skip only if dest exists AND is newer than source
+                    if (destStat.mtimeMs >= sourceStat.mtimeMs) {
+                        copiedFiles.push(destPath);
+                        continue;
+                    }
                 } catch (error: any) {
-                    if (error?.code === 'ENOENT') {
-                    } else {
+                    if (error?.code !== 'ENOENT') {
                         throw error;
                     }
+                    // ENOENT means dest doesn't exist, proceed to copy
                 }
             }
 
